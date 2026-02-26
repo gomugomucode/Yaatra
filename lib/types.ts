@@ -14,6 +14,7 @@ export interface User {
   email?: string;
   role: UserRole;
   createdAt: Date;
+  solanaWallet?: string; // Phantom wallet address (for Solana features)
 }
 
 export interface Driver extends User {
@@ -23,6 +24,12 @@ export interface Driver extends User {
   licenseNumber: string;
   isApproved: boolean;
   rating?: number;
+  verificationBadge?: {
+    mintAddress: string;
+    txSignature: string;
+    explorerLink: string;
+    verifiedAt: string;
+  };
 }
 
 export interface PassengerUser extends User {

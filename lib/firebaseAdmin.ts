@@ -8,7 +8,10 @@ export const getFirebaseAdminAuth = (): Auth => {
     if (getApps().length === 0) {
       const projectId = process.env.FIREBASE_PROJECT_ID;
       const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-      const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+      const rawPrivateKey = process.env.FIREBASE_PRIVATE_KEY || '';
+      // Next.js sometimes preserves the literal double quotes from .env.local
+      // We must strip them and correctly parse the literal \n strings into actual newlines
+      const privateKey = rawPrivateKey.replace(/^"|"$/g, '').replace(/\\n/g, '\n');
 
       if (!projectId || !clientEmail || !privateKey) {
         throw new Error('Missing Firebase admin configuration. Please set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY.');

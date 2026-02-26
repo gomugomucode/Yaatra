@@ -211,6 +211,19 @@ export const updateUserProfile = async (userId: string, updates: any) => {
     });
 };
 
+export const updateDriverVerificationStatus = async (
+    userId: string,
+    badgeData: { mintAddress: string; txSignature: string; explorerLink: string; verifiedAt: string }
+) => {
+    const db = getDb();
+    const userRef = ref(db, `users/${userId}`);
+    await update(userRef, {
+        verificationBadge: badgeData,
+        isApproved: true, // Automatically mark as approved if verified on-chain
+        updatedAt: new Date().toISOString()
+    });
+};
+
 export const subscribeToUserProfile = (userId: string, callback: (userData: any) => void) => {
     const db = getDb();
     const userRef = ref(db, `users/${userId}`);

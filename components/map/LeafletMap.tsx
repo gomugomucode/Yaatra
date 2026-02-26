@@ -378,7 +378,14 @@ function AnimatedBusMarker({
         >
             <Popup>
                 <div className="p-2">
-                    <h3 className="font-bold">{bus.busNumber}</h3>
+                    <h3 className="font-bold flex items-center gap-1.5">
+                        {bus.busNumber}
+                        {(bus as any).verificationBadge && (
+                            <span title="Solana Verified Driver" className="flex items-center text-emerald-500 bg-emerald-500/10 rounded-full p-0.5">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" /><path d="m9 12 2 2 4-4" /></svg>
+                            </span>
+                        )}
+                    </h3>
                     <p>{bus.driverName}</p>
                     <p className="text-sm text-gray-500">{bus.route}</p>
                     <div className="mt-2 text-xs">

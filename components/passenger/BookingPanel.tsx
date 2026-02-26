@@ -154,8 +154,18 @@ export default function BookingPanel({
 						</div>
 						<div>
 							<CardTitle className="text-lg font-bold text-white">Ride Request</CardTitle>
-							<CardDescription className="text-slate-400">
-								{selectedBus ? `Bus ${selectedBus.busNumber} Selected` : 'Select a bus to hail'}
+							<CardDescription className="text-slate-400 mt-1 flex flex-col gap-1">
+								{selectedBus ? (
+									<>
+										<span>Bus {selectedBus.busNumber} Selected</span>
+										{(selectedBus as any).verificationBadge && (
+											<span className="inline-flex items-center gap-1.5 text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full text-xs font-semibold w-fit border border-emerald-500/20">
+												<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" /><path d="m9 12 2 2 4-4" /></svg>
+												Solana Verified Driver
+											</span>
+										)}
+									</>
+								) : 'Select a bus to hail'}
 							</CardDescription>
 						</div>
 					</div>

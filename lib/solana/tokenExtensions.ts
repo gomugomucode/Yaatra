@@ -18,10 +18,6 @@ import {
     getAssociatedTokenAddressSync,
     ASSOCIATED_TOKEN_PROGRAM_ID
 } from '@solana/spl-token';
-import {
-    createInitializeInstruction,
-    pack
-} from '@solana/spl-token-metadata';
 import crypto from 'crypto';
 
 /**
@@ -34,12 +30,18 @@ export interface BadgeMetadata {
 }
 
 /**
- * Creates a Soulbound (NonTransferable) Token-2022 Verification Badge for a driver
- * @param connection Solana connection
- * @param serverKeypair The server's keypair (payer & mint authority)
- * @param driverWalletAddress The destination phantom wallet address of the driver
- * @param metadata Contextual metadata about the driver
- * @returns Base58 string of the Mint Address and the Transaction Signature
+ * Creates a Soulbound (NonTransferable) Token-2022 Verification Badge for a driver.
+ *
+ * Uses only the NonTransferableMint extension to keep the on-chain footprint
+ * minimal and avoid InvalidAccountData errors.  Driver metadata (name, document
+ * hash, vehicle type, etc.) is stored off-chain in Firebase and referenced by
+ * the mint address.
+ *
+ * @param connection  Solana connection
+ * @param serverKeypair  The server's keypair (payer & mint authority)
+ * @param driverWalletAddress  The destination wallet address of the driver
+ * @param metadata  Contextual metadata about the driver
+ * @returns  mintAddress, transaction signature, and Solana Explorer link
  */
 export async function createDriverVerificationBadge(
     connection: Connection,
@@ -50,74 +52,47 @@ export async function createDriverVerificationBadge(
     const driverPubkey = new PublicKey(driverWalletAddress);
     const mintKeypair = Keypair.generate();
     const mintPubkey = mintKeypair.publicKey;
-    const decimals = 0; // Soulbound badges have 0 decimals (non-fungible)
+    const decimals = 0; // Soulbound badges are non-fungible (0 decimals, supply 1)
 
-    // 1. Prepare Metadata
-    // Hash the license number for privacy on-chain
-    const documentHash = crypto.createHash('sha256').update(metadata.licenseNumber).digest('hex');
-    const timestamp = new Date().toISOString();
+    // Hash the license number for privacy (stored off-chain in Firebase)
+    const documentHash = crypto
+        .createHash('sha256')
+        .update(metadata.licenseNumber)
+        .digest('hex');
 
-    const additionalMetadata: [string, string][] = [
-        ['vehicleType', metadata.vehicleType],
-        ['documentHash', documentHash],
-        ['verifiedAt', timestamp],
-        ['platform', 'Yatra Transit']
-    ];
+    // ---------------------------------------------------------------
+    // 1. Calculate account space for the NonTransferableMint extension
+    // ---------------------------------------------------------------
+    // NonTransferableMint = 10 in the Token-2022 ExtensionType enum
+    // Using numeric constant because the named member is undefined in this package version
+    const extensions = [10 as ExtensionType];
+    const mintLen = getMintLen(extensions);
+    const lamports = await connection.getMinimumBalanceForRentExemption(mintLen);
 
-    const tokenMetadata = {
-        updateAuthority: serverKeypair.publicKey,
-        mint: mintPubkey,
-        name: `Yatra Verified: ${metadata.driverName}`,
-        symbol: 'YATRA_VERIFIED',
-        uri: "https://yatra.com", // Placeholder: ideally points to an off-chain JSON with image
-        additionalMetadata,
-    };
-
-    // Calculate required space for token metadata
-    // Buffer length = base token length + extensions length + metadata length
-    const extensionTypes = [ExtensionType.NonTransferable, ExtensionType.MetadataPointer];
-    const mintLen = getMintLen(extensionTypes);
-    const metadataLen = Buffer.from(pack(tokenMetadata)).length;
-    const totalLen = mintLen + metadataLen;
-
-    const lamports = await connection.getMinimumBalanceForRentExemption(totalLen);
-
-    // 2. Build Instructions
+    // ---------------------------------------------------------------
+    // 2. Build the transaction – STRICT instruction order required
+    // ---------------------------------------------------------------
     const transaction = new Transaction();
 
-    // Priority Fee (optional but highly recommended on Devnet/Mainnet)
+    // (a) Priority fee – helps tx land quickly on Devnet / Mainnet
     transaction.add(
         ComputeBudgetProgram.setComputeUnitPrice({
             microLamports: 100_000,
         })
     );
 
-    // Create Account
+    // (b) Create the mint account with enough space for the extension
     transaction.add(
         SystemProgram.createAccount({
             fromPubkey: serverKeypair.publicKey,
             newAccountPubkey: mintPubkey,
-            space: totalLen,
+            space: mintLen,
             lamports,
             programId: TOKEN_2022_PROGRAM_ID,
         })
     );
 
-    // Initialize Metadata Pointer EXTESNION
-    transaction.add(
-        createInitializeInstruction({
-            programId: TOKEN_2022_PROGRAM_ID,
-            metadata: mintPubkey,
-            updateAuthority: serverKeypair.publicKey,
-            mint: mintPubkey,
-            mintAuthority: serverKeypair.publicKey,
-            name: tokenMetadata.name,
-            symbol: tokenMetadata.symbol,
-            uri: tokenMetadata.uri,
-        })
-    );
-
-    // Initialize Non-Transferable EXTENSION
+    // (c) Initialize NonTransferable extension – MUST come BEFORE InitializeMint
     transaction.add(
         createInitializeNonTransferableMintInstruction(
             mintPubkey,
@@ -125,18 +100,20 @@ export async function createDriverVerificationBadge(
         )
     );
 
-    // Initialize Mint
+    // (d) Initialize the Mint itself – MUST come AFTER all extension inits
     transaction.add(
         createInitializeMintInstruction(
             mintPubkey,
             decimals,
             serverKeypair.publicKey, // mintAuthority
-            null, // freezeAuthority
+            null,                    // freezeAuthority (none)
             TOKEN_2022_PROGRAM_ID
         )
     );
 
-    // Calculate Driver's Associated Token Account (ATA) for this specific mint (Must be Token-2022)
+    // ---------------------------------------------------------------
+    // 3. Create the driver's Associated Token Account & mint 1 badge
+    // ---------------------------------------------------------------
     const driverAta = getAssociatedTokenAddressSync(
         mintPubkey,
         driverPubkey,
@@ -145,38 +122,36 @@ export async function createDriverVerificationBadge(
         ASSOCIATED_TOKEN_PROGRAM_ID
     );
 
-    // Create ATA for driver
+    // (e) Create ATA for the driver
     transaction.add(
         createAssociatedTokenAccountInstruction(
             serverKeypair.publicKey, // payer
-            driverAta, // ata
-            driverPubkey, // owner
-            mintPubkey, // mint
+            driverAta,               // ata
+            driverPubkey,            // owner
+            mintPubkey,              // mint
             TOKEN_2022_PROGRAM_ID,
             ASSOCIATED_TOKEN_PROGRAM_ID
         )
     );
 
-    // Mint Exactly 1 Token to the Driver
+    // (f) Mint exactly 1 token to the driver's ATA
     transaction.add(
         createMintToInstruction(
             mintPubkey,
             driverAta,
             serverKeypair.publicKey, // mint authority
-            1, // amount
+            1,                       // amount
             [],
             TOKEN_2022_PROGRAM_ID
         )
     );
 
-    // 3. Send Transaction
-    // Ensure we have a recent blockhash
-    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+    // ---------------------------------------------------------------
+    // 4. Sign & send
+    // ---------------------------------------------------------------
+    const { blockhash } = await connection.getLatestBlockhash('confirmed');
     transaction.recentBlockhash = blockhash;
     transaction.feePayer = serverKeypair.publicKey;
-
-    // Sign with server (payer & mint auth) AND the mint keypair itself (which is being created)
-    transaction.sign(serverKeypair, mintKeypair);
 
     try {
         const signature = await sendAndConfirmTransaction(
@@ -189,10 +164,13 @@ export async function createDriverVerificationBadge(
         return {
             mintAddress: mintPubkey.toBase58(),
             signature,
-            explorerLink: `https://explorer.solana.com/address/${mintPubkey.toBase58()}?cluster=devnet`
+            documentHash,
+            explorerLink: `https://explorer.solana.com/address/${mintPubkey.toBase58()}?cluster=devnet`,
         };
     } catch (e) {
-        console.error("Token-2022 Minting Error:", e);
-        throw new Error(`Failed to mint verification badge: ${(e as Error).message}`);
+        console.error('Token-2022 Minting Error:', e);
+        throw new Error(
+            `Failed to mint verification badge: ${(e as Error).message}`
+        );
     }
 }

@@ -226,23 +226,9 @@ function ProfilePageContent() {
       const vehicleTypeData = VEHICLE_TYPES.find((v) => v.id === data.vehicleType);
       const capacity = vehicleTypeData?.capacity || data.capacity;
 
-      // Create user profile in Realtime Database
-      await createUserProfile(currentUser.uid, {
-        phone: currentUser.phoneNumber || '',
-        name: data.name,
-        role: 'driver',
-        vehicleType: data.vehicleType,
-        vehicleNumber: data.vehicleNumber,
-        route: data.route,
-        capacity,
-        licenseNumber: data.licenseNumber,
-        profileImage: data.profileImage || null,
-        vehicleImage: data.vehicleImage || null,
-        isApproved: false,
-      });
-
       const idToken = await currentUser.getIdToken();
-      await fetch('/api/auth/register', {
+      // 1. Call the backend API so it can set up the DB as an Admin (bypassing client rules)
+      const registerRes = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -261,10 +247,14 @@ function ProfilePageContent() {
         }),
       });
 
+      if (!registerRes.ok) {
+        throw new Error('Registration API failed');
+      }
+
       // Ensure role is set in context before creating session
       setRole('driver');
 
-      // Create session cookie and wait for it to be set
+      // 2. Create session cookie and wait for it to be set
       const sessionResponse = await fetch('/api/sessionLogin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -278,43 +268,61 @@ function ProfilePageContent() {
       // Wait a bit to ensure cookie is set
       await new Promise(resolve => setTimeout(resolve, 500));
 
-      const app = getFirebaseApp();
-      const rtdb = getDatabase(app);
-      const busId = currentUser.uid;
-      const busRef = ref(rtdb, `buses/${busId}`);
-      const nowIso = new Date().toISOString();
+      // 3. (Optional) Create bus profile & user profile via client AFTER claims are set
+      try {
+        await createUserProfile(currentUser.uid, {
+          phone: currentUser.phoneNumber || '',
+          name: data.name,
+          role: 'driver',
+          vehicleType: data.vehicleType,
+          vehicleNumber: data.vehicleNumber,
+          route: data.route,
+          capacity,
+          licenseNumber: data.licenseNumber,
+          profileImage: data.profileImage || null,
+          vehicleImage: data.vehicleImage || null,
+          isApproved: false,
+        });
 
-      const vehicleMeta = VEHICLE_TYPES.find((v) => v.id === data.vehicleType);
+        const app = getFirebaseApp();
+        const rtdb = getDatabase(app);
+        const busId = currentUser.uid;
+        const busRef = ref(rtdb, `buses/${busId}`);
+        const nowIso = new Date().toISOString();
+        const vehicleMeta = VEHICLE_TYPES.find((v) => v.id === data.vehicleType);
 
-      await rtdbSet(busRef, {
-        id: busId,
-        driverName: data.name,
-        driverImage: data.profileImage || null,
-        vehicleImage: data.vehicleImage || null,
-        busNumber: data.vehicleNumber,
-        route: data.route,
-        currentLocation: {
-          lat: DEFAULT_LOCATION.lat,
-          lng: DEFAULT_LOCATION.lng,
-          address: 'Starting point',
-          timestamp: nowIso,
-        },
-        destination: {
-          lat: DEFAULT_LOCATION.lat,
-          lng: DEFAULT_LOCATION.lng,
-          address: 'Destination not set',
-          timestamp: nowIso,
-        },
-        passengers: [],
-        capacity,
-        isActive: false,
-        emoji: vehicleMeta?.icon || '🚌',
-        vehicleType: data.vehicleType,
-        onlineBookedSeats: 0,
-        offlineOccupiedSeats: 0,
-        availableSeats: capacity,
-        lastSeatUpdate: nowIso,
-      });
+        await rtdbSet(busRef, {
+          id: busId,
+          driverName: data.name,
+          driverImage: data.profileImage || null,
+          vehicleImage: data.vehicleImage || null,
+          busNumber: data.vehicleNumber,
+          route: data.route,
+          currentLocation: {
+            lat: DEFAULT_LOCATION.lat,
+            lng: DEFAULT_LOCATION.lng,
+            address: 'Starting point',
+            timestamp: nowIso,
+          },
+          destination: {
+            lat: DEFAULT_LOCATION.lat,
+            lng: DEFAULT_LOCATION.lng,
+            address: 'Destination not set',
+            timestamp: nowIso,
+          },
+          passengers: [],
+          capacity,
+          isActive: false,
+          emoji: vehicleMeta?.icon || '🚌',
+          vehicleType: data.vehicleType,
+          onlineBookedSeats: 0,
+          offlineOccupiedSeats: 0,
+          availableSeats: capacity,
+          lastSeatUpdate: nowIso,
+        });
+      } catch (err) {
+        console.warn('Bus RTDB initialized by backend or failed:', err);
+      }
 
       toast({
         title: 'Profile created!',
@@ -361,17 +369,8 @@ function ProfilePageContent() {
     try {
       setIsSubmitting(true);
 
-      // Create user profile in Realtime Database
-      await createUserProfile(currentUser.uid, {
-        phone: currentUser.phoneNumber || '',
-        name: data.name,
-        email: data.email || null,
-        role: 'passenger',
-        emergencyContact: data.emergencyContact || null,
-      });
-
       const idToken = await currentUser.getIdToken();
-      await fetch('/api/auth/register', {
+      const registerRes = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -401,6 +400,19 @@ function ProfilePageContent() {
 
       // Wait a bit to ensure cookie is set
       await new Promise(resolve => setTimeout(resolve, 500));
+
+      // 3. (Optional) Create user profile via client AFTER claims are set
+      try {
+        await createUserProfile(currentUser.uid, {
+          phone: currentUser.phoneNumber || '',
+          name: data.name,
+          email: data.email || null,
+          role: 'passenger',
+          emergencyContact: data.emergencyContact || null,
+        });
+      } catch (err) {
+        console.warn('Passenger RTDB initialized by backend or failed:', err);
+      }
 
       toast({
         title: 'Profile created!',

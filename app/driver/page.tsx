@@ -3,11 +3,12 @@
 import { useState, useEffect } from 'react';
 import DriverPanel from '@/components/driver/DriverPanel';
 import PassengerList from '@/components/driver/PassengerList';
+import VerificationPanel from '@/components/driver/VerificationPanel';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Bus, Passenger } from '@/lib/types';
+import { Bus, Passenger, Driver } from '@/lib/types';
 import MapWrapper from '@/components/map/MapWrapper';
 import {
   Navigation,
@@ -686,6 +687,16 @@ export default function DriverDashboard() {
               onAddOfflinePassenger={handleAddOfflinePassenger}
               onRemoveOfflinePassenger={handleRemoveOfflinePassenger}
             />
+            {userData && (
+              <div className="mt-4">
+                <VerificationPanel
+                  driver={userData as Driver}
+                  onVerificationSuccess={() => {
+                    // Force a re-render or refetch if needed. The real-time listener will catch it eventually.
+                  }}
+                />
+              </div>
+            )}
           </div>
         )}
 

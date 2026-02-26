@@ -75,9 +75,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
             setLoading(false);
           });
-        } catch (err) {
+        } catch (err: any) {
           clearTimeout(safetyTimeout);
-          console.error('[Auth] Failed to subscribe to user profile', err);
+          // Gracefully handle Permission denied - this can happen during initial sign-in
+          // before the server sets up the user profile
+          if (err?.message?.includes('Permission denied') || err?.message?.includes('PERMISSION_DENIED')) {
+            console.warn('[Auth] Permission denied reading profile, will retry after profile creation');
+          } else {
+            console.error('[Auth] Failed to subscribe to user profile', err);
+          }
           setLoading(false);
         }
       } else {
