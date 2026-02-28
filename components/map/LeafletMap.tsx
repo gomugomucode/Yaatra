@@ -457,8 +457,17 @@ function LeafletMapInner({
 
     // Determine a mock uid purely for this Map component to use (assuming current login is based on 'role').
     // In a real app we'd grab it from `useAuth()` or standard props.
-    // For demo/hackathon purposes, if driver, we'll pretend uid is 'driver-123', if passenger 'pass-123'
-    const mockUid = role === 'driver' ? 'demo-driver-001' : (role === 'passenger' ? 'demo-passenger-001' : undefined);
+    // For demo/hackathon purposes we need unique IDs per tab.
+    const [mockUid] = useState(() => {
+        if (role === 'admin') return undefined;
+        return role + "_" + Math.random().toString(36).substring(2, 9);
+    });
+
+    useEffect(() => {
+        if (mockUid) {
+            console.log("Current user:", { uid: mockUid, role });
+        }
+    }, [mockUid, role]);
 
     // Call custom hook for pushing our own location to Firebase
     const { isTracking, toggleTracking, location: liveLocation } = useLiveLocation(
@@ -472,6 +481,10 @@ function LeafletMapInner({
             setCurrentPosition([liveLocation.lat, liveLocation.lng]);
         }
     }, [liveLocation]);
+
+    useEffect(() => {
+        console.log("🗺 visibleUsers:", liveUsers);
+    }, [liveUsers]);
 
     useEffect(() => {
         let timeout: NodeJS.Timeout;

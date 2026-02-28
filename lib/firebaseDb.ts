@@ -307,6 +307,7 @@ export const subscribeToLiveUsers = (callback: (users: LiveUser[]) => void) => {
 
     const unsubscribe = onValue(usersRef, (snapshot) => {
         const data = snapshot.val();
+        console.log("🔥 Firebase snapshot:", data);
         if (data) {
             const usersList = Object.values(data) as LiveUser[];
             callback(usersList);
@@ -321,6 +322,7 @@ export const subscribeToLiveUsers = (callback: (users: LiveUser[]) => void) => {
 export const updateLiveUserStatus = async (user: LiveUser) => {
     const db = getDb();
     const userRef = ref(db, `live_users/${user.uid}`);
+    console.log("📡 Writing user to Firebase:", user);
     await set(userRef, {
         ...user,
         updatedAt: new Date().toISOString()

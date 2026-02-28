@@ -66,6 +66,7 @@ export function useLiveLocation(
                 }
 
                 if (shouldUpdate) {
+                    console.log("📍 New GPS position:", latitude, longitude);
                     setLocation({ lat: latitude, lng: longitude });
 
                     if (uid && role) {
