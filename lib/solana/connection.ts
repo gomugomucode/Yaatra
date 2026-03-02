@@ -7,7 +7,7 @@ import { Connection, Keypair, clusterApiUrl } from '@solana/web3.js';
 const bs58 = require('bs58').default as { encode: (buf: Uint8Array) => string; decode: (str: string) => Uint8Array };
 
 // Use environment variables or fallback to devnet
-const RPC_ENDPOINT = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || clusterApiUrl('devnet');
+const RPC_ENDPOINT = process.env.SOLANA_RPC_URL || clusterApiUrl('devnet');
 
 export const getConnection = () => {
     return new Connection(RPC_ENDPOINT, 'confirmed');

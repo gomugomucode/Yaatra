@@ -5,7 +5,8 @@ import {
     SystemProgram,
     Transaction,
     sendAndConfirmTransaction,
-    ComputeBudgetProgram
+    ComputeBudgetProgram,
+    LAMPORTS_PER_SOL
 } from '@solana/web3.js';
 import {
     ExtensionType,
@@ -20,28 +21,14 @@ import {
 } from '@solana/spl-token';
 import crypto from 'crypto';
 
-/**
- * Metadata parameters for the Verification Badge
- */
 export interface BadgeMetadata {
     driverName: string;
     vehicleType: string;
-    licenseNumber: string; // The raw license number used for hashing
+    licenseNumber: string;
 }
 
 /**
- * Creates a Soulbound (NonTransferable) Token-2022 Verification Badge for a driver.
- *
- * Uses only the NonTransferableMint extension to keep the on-chain footprint
- * minimal and avoid InvalidAccountData errors.  Driver metadata (name, document
- * hash, vehicle type, etc.) is stored off-chain in Firebase and referenced by
- * the mint address.
- *
- * @param connection  Solana connection
- * @param serverKeypair  The server's keypair (payer & mint authority)
- * @param driverWalletAddress  The destination wallet address of the driver
- * @param metadata  Contextual metadata about the driver
- * @returns  mintAddress, transaction signature, and Solana Explorer link
+ * Creates a Soulbound (NonTransferable) Token-2022 Verification Badge.
  */
 export async function createDriverVerificationBadge(
     connection: Connection,
@@ -49,39 +36,40 @@ export async function createDriverVerificationBadge(
     driverWalletAddress: string,
     metadata: BadgeMetadata
 ) {
+    console.log("🛠️ [Badge Logic] Initializing mint process...");
+
     const driverPubkey = new PublicKey(driverWalletAddress);
     const mintKeypair = Keypair.generate();
     const mintPubkey = mintKeypair.publicKey;
-    const decimals = 0; // Soulbound badges are non-fungible (0 decimals, supply 1)
+    const decimals = 0;
 
-    // Hash the license number for privacy (stored off-chain in Firebase)
+    // 1. Balance Check
+    const balance = await connection.getBalance(serverKeypair.publicKey);
+    console.log(`💰 [Badge Logic] Server balance: ${balance / LAMPORTS_PER_SOL} SOL`);
+
+    if (balance < 0.02 * LAMPORTS_PER_SOL) {
+        throw new Error("Server wallet has insufficient SOL for Token-2022 rent.");
+    }
+
     const documentHash = crypto
         .createHash('sha256')
         .update(metadata.licenseNumber)
         .digest('hex');
 
-    // ---------------------------------------------------------------
-    // 1. Calculate account space for the NonTransferableMint extension
-    // ---------------------------------------------------------------
-    // NonTransferableMint = 10 in the Token-2022 ExtensionType enum
-    // Using numeric constant because the named member is undefined in this package version
-    const extensions = [10 as ExtensionType];
+    // 2. Space Calculation
+    const extensions = [ExtensionType.NonTransferable];
     const mintLen = getMintLen(extensions);
     const lamports = await connection.getMinimumBalanceForRentExemption(mintLen);
 
-    // ---------------------------------------------------------------
-    // 2. Build the transaction – STRICT instruction order required
-    // ---------------------------------------------------------------
     const transaction = new Transaction();
 
-    // (a) Priority fee – helps tx land quickly on Devnet / Mainnet
+    // 3. Instructions
+    // (a) Priority fee - Helps transaction get picked up faster
     transaction.add(
-        ComputeBudgetProgram.setComputeUnitPrice({
-            microLamports: 100_000,
-        })
+        ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 200_000 })
     );
 
-    // (b) Create the mint account with enough space for the extension
+    // (b) Create Mint Account
     transaction.add(
         SystemProgram.createAccount({
             fromPubkey: serverKeypair.publicKey,
@@ -92,28 +80,23 @@ export async function createDriverVerificationBadge(
         })
     );
 
-    // (c) Initialize NonTransferable extension – MUST come BEFORE InitializeMint
+    // (c) Soulbound extension (Non-transferable)
     transaction.add(
-        createInitializeNonTransferableMintInstruction(
-            mintPubkey,
-            TOKEN_2022_PROGRAM_ID
-        )
+        createInitializeNonTransferableMintInstruction(mintPubkey, TOKEN_2022_PROGRAM_ID)
     );
 
-    // (d) Initialize the Mint itself – MUST come AFTER all extension inits
+    // (d) Initialize Mint
     transaction.add(
         createInitializeMintInstruction(
             mintPubkey,
             decimals,
-            serverKeypair.publicKey, // mintAuthority
-            null,                    // freezeAuthority (none)
+            serverKeypair.publicKey,
+            null,
             TOKEN_2022_PROGRAM_ID
         )
     );
 
-    // ---------------------------------------------------------------
-    // 3. Create the driver's Associated Token Account & mint 1 badge
-    // ---------------------------------------------------------------
+    // (e) Associated Token Account (ATA) & Mint 1 unit
     const driverAta = getAssociatedTokenAddressSync(
         mintPubkey,
         driverPubkey,
@@ -122,44 +105,46 @@ export async function createDriverVerificationBadge(
         ASSOCIATED_TOKEN_PROGRAM_ID
     );
 
-    // (e) Create ATA for the driver
     transaction.add(
         createAssociatedTokenAccountInstruction(
-            serverKeypair.publicKey, // payer
-            driverAta,               // ata
-            driverPubkey,            // owner
-            mintPubkey,              // mint
+            serverKeypair.publicKey,
+            driverAta,
+            driverPubkey,
+            mintPubkey,
             TOKEN_2022_PROGRAM_ID,
             ASSOCIATED_TOKEN_PROGRAM_ID
-        )
-    );
-
-    // (f) Mint exactly 1 token to the driver's ATA
-    transaction.add(
+        ),
         createMintToInstruction(
             mintPubkey,
             driverAta,
-            serverKeypair.publicKey, // mint authority
-            1,                       // amount
+            serverKeypair.publicKey,
+            1,
             [],
             TOKEN_2022_PROGRAM_ID
         )
     );
 
-    // ---------------------------------------------------------------
-    // 4. Sign & send
-    // ---------------------------------------------------------------
-    const { blockhash } = await connection.getLatestBlockhash('confirmed');
-    transaction.recentBlockhash = blockhash;
-    transaction.feePayer = serverKeypair.publicKey;
-
+    // 4. Sign & Send
     try {
+        console.log("📨 [Badge Logic] Sending transaction to Devnet...");
+
+        // Using 'processed' commitment here makes the UI update MUCH faster
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('processed');
+        transaction.recentBlockhash = blockhash;
+        transaction.feePayer = serverKeypair.publicKey;
+
         const signature = await sendAndConfirmTransaction(
             connection,
             transaction,
             [serverKeypair, mintKeypair],
-            { commitment: 'confirmed' }
+            {
+                commitment: 'processed',
+                skipPreflight: false, // Keep false to see specific errors if it fails
+                preflightCommitment: 'processed'
+            }
         );
+
+        console.log(`✅ [Badge Logic] Success! Mint: ${mintPubkey.toBase58()}`);
 
         return {
             mintAddress: mintPubkey.toBase58(),
@@ -167,10 +152,14 @@ export async function createDriverVerificationBadge(
             documentHash,
             explorerLink: `https://explorer.solana.com/address/${mintPubkey.toBase58()}?cluster=devnet`,
         };
-    } catch (e) {
-        console.error('Token-2022 Minting Error:', e);
-        throw new Error(
-            `Failed to mint verification badge: ${(e as Error).message}`
-        );
+    } catch (e: any) {
+        console.error('❌ [Badge Logic] Transaction Failed:', e.message);
+
+        // Specific error handling for "Account Already Exists" or "Insufficient Funds"
+        if (e.message.includes("0x0")) {
+            throw new Error("Transaction simulation failed. Check if the driver already has a badge.");
+        }
+
+        throw new Error(`Solana Transaction Failed: ${e.message}`);
     }
 }

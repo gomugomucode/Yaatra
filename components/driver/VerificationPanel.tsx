@@ -3,93 +3,134 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Shield, ShieldCheck, Loader2, ExternalLink, Wallet } from 'lucide-react';
+import {
+    Shield, ShieldCheck, Loader2, ExternalLink,
+    Wallet, Lock, Eye, EyeOff, CheckCircle2, ChevronRight
+} from 'lucide-react';
 import { Driver } from '@/lib/types';
 import { useToast } from '@/components/ui/use-toast';
-import { updateDriverVerificationStatus } from '@/lib/firebaseDb';
+import { formatCommitment } from '@/lib/zk/prover';
 
 interface VerificationPanelProps {
     driver: Driver;
     onVerificationSuccess: () => void;
 }
 
+type Step = 'credentials' | 'proof' | 'mint';
+
 /**
- * Renders the Solana verification section on the driver dashboard.
- * - Unverified: shows wallet address input + "Verify on Blockchain" button
- * - Verified: shows a green badge + Solana Explorer link
+ * 3-step ZK Civic Identity verification panel.
+ * Corrected for Age >= 21 requirement in 2026 (Birth Year <= 2005).
  */
 export default function VerificationPanel({ driver, onVerificationSuccess }: VerificationPanelProps) {
     const { toast } = useToast();
-    const [isVerifying, setIsVerifying] = useState(false);
-    // Pre-fill from stored wallet if available
-    const [walletAddress, setWalletAddress] = useState(driver.solanaWallet || '');
-    const [walletError, setWalletError] = useState('');
 
-    const validateWallet = (address: string): boolean => {
-        // Solana addresses are base58 encoded, 32–44 characters
-        if (!address || address.trim().length < 32 || address.trim().length > 44) {
-            setWalletError('Enter a valid Solana wallet address (32–44 characters)');
-            return false;
+    // Step state
+    const [step, setStep] = useState<Step>('credentials');
+    const [isGeneratingProof, setIsGeneratingProof] = useState(false);
+    const [isMinting, setIsMinting] = useState(false);
+
+    // Step 1 inputs — stay in browser
+    const [licenseNumber, setLicenseNumber] = useState('');
+    const [birthYear, setBirthYear] = useState('');
+    const [walletAddress, setWalletAddress] = useState(driver.solanaWallet || '');
+    const [showLicense, setShowLicense] = useState(false);
+
+    // Step 2 outputs — ZK proof (safe to send to server)
+    const [zkProof, setZkProof] = useState<object | null>(null);
+    const [zkPublicSignals, setZkPublicSignals] = useState<string[] | null>(null);
+    const [zkCommitment, setZkCommitment] = useState('');
+
+    // Validation errors
+    const [errors, setErrors] = useState<Record<string, string>>({});
+
+    // ── Field validation ──────────────────────────────────────────────────────
+    const validate = (): boolean => {
+        const e: Record<string, string> = {};
+        if (!licenseNumber.trim()) e.license = 'License number is required';
+
+        const yr = parseInt(birthYear);
+        // FIXED LOGIC: Birth year must be 2005 or earlier to be 21+ in 2026.
+        if (!birthYear || isNaN(yr) || yr < 1920 || yr > 2005) {
+            e.birthYear = 'Must be born in 2005 or earlier (Age ≥ 21)';
         }
-        setWalletError('');
-        return true;
+
+        if (!walletAddress.trim() || walletAddress.trim().length < 32 || walletAddress.trim().length > 44) {
+            e.wallet = 'Enter a valid Solana wallet address (32–44 chars)';
+        }
+        setErrors(e);
+        return Object.keys(e).length === 0;
     };
 
-    const handleVerify = async () => {
-        const trimmedWallet = walletAddress.trim();
-        if (!validateWallet(trimmedWallet)) return;
-
-        setIsVerifying(true);
+    // ── Step 2: Generate ZK Proof (client-side) ───────────────────────────────
+    const handleGenerateProof = async () => {
+        if (!validate()) return;
+        setIsGeneratingProof(true);
         try {
-            const response = await fetch('/api/solana/verify-driver', {
+            const { generateDriverProof } = await import('@/lib/zk/prover');
+
+            const result = await generateDriverProof({
+                licenseNumber: licenseNumber.trim(),
+                birthYear: parseInt(birthYear),
+            });
+
+            setZkProof(result.proof);
+            setZkPublicSignals(result.publicSignals);
+            setZkCommitment(result.commitment);
+            setStep('proof');
+
+            toast({
+                title: '🔐 ZK Proof Generated!',
+                description: 'Your credentials were verified locally. Zero data was sent to the server.',
+                duration: 4000,
+            });
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : 'Proof generation failed';
+            toast({ title: 'Proof Failed', description: msg, variant: 'destructive' });
+        } finally {
+            setIsGeneratingProof(false);
+        }
+    };
+
+    // ── Step 3: Send proof to server, mint badge ──────────────────────────────
+    const handleMint = async () => {
+        if (!zkProof || !zkPublicSignals) return;
+        setIsMinting(true);
+        try {
+            const res = await fetch('/api/solana/verify-driver', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     driverId: driver.id,
-                    licenseNumber: driver.licenseNumber || 'PENDING_LICENSE',
                     driverName: driver.name,
                     vehicleType: driver.vehicleType,
-                    // Use the driver's Phantom wallet; never fall back to System Program address
-                    driverWalletAddress: trimmedWallet,
+                    driverWalletAddress: walletAddress.trim(),
+                    zkProof,
+                    zkPublicSignals,
                 }),
             });
 
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || 'Verification failed');
-            }
-
-            // Persist badge data + wallet to Firebase
-            await updateDriverVerificationStatus(driver.id, {
-                mintAddress: data.mintAddress,
-                txSignature: data.signature,
-                explorerLink: data.explorerLink,
-                verifiedAt: new Date().toISOString(),
-            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Verification failed');
 
             toast({
-                title: 'Blockchain Verification Complete! 🎉',
-                description: 'Your soulbound Verification Badge has been minted on Solana Devnet.',
-                duration: 5000,
+                title: '🎉 Blockchain Verification Complete!',
+                description: `ZK-verified badge minted. Commitment anchored on Solana.`,
+                duration: 6000,
             });
 
             onVerificationSuccess();
-        } catch (error: unknown) {
-            const msg = error instanceof Error ? error.message : 'Something went wrong. Please try again.';
-            console.error('Verification error:', error);
-            toast({
-                title: 'Verification Failed',
-                description: msg,
-                variant: 'destructive',
-            });
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : 'Minting failed';
+            toast({ title: 'Minting Failed', description: msg, variant: 'destructive' });
         } finally {
-            setIsVerifying(false);
+            setIsMinting(false);
         }
     };
 
-    // ── Already verified ──────────────────────────────────────────────────
+    // ── Already verified ──────────────────────────────────────────────────────
     if (driver.verificationBadge) {
+        const badge = driver.verificationBadge;
         return (
             <Card className="bg-emerald-950/20 border-emerald-500/30 shadow-lg">
                 <CardHeader className="pb-3">
@@ -98,34 +139,41 @@ export default function VerificationPanel({ driver, onVerificationSuccess }: Ver
                             <ShieldCheck className="w-6 h-6 text-emerald-400" />
                         </div>
                         <div>
-                            <CardTitle className="text-lg font-bold text-white">
-                                Verified Driver
-                            </CardTitle>
-                            <CardDescription className="text-emerald-400/80">
-                                Secured by Solana Token-2022
+                            <CardTitle className="text-lg font-bold text-white">ZK Civic Identity Verified</CardTitle>
+                            <CardDescription className="text-emerald-400/80 text-xs">
+                                Secured by Groth16 ZK-SNARK · Token-2022 Soulbound Badge
                             </CardDescription>
                         </div>
                     </div>
                 </CardHeader>
-                <CardContent>
-                    <div className="space-y-3">
-                        <p className="text-sm text-slate-300">
-                            Your documents are cryptographically hashed and verified on-chain.
-                            Passengers see a <strong className="text-emerald-400">Solana Verified</strong> badge when they tap your marker.
-                        </p>
+                <CardContent className="space-y-3">
+                    <div className="grid grid-cols-2 gap-2">
+                        <div className="bg-emerald-900/20 border border-emerald-700/30 rounded-lg p-2.5 flex items-center gap-2">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                            <span className="text-xs text-emerald-300 font-medium">Age ≥ 21</span>
+                        </div>
+                        <div className="bg-emerald-900/20 border border-emerald-700/30 rounded-lg p-2.5 flex items-center gap-2">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                            <span className="text-xs text-emerald-300 font-medium">License Valid</span>
+                        </div>
+                    </div>
+
+                    {badge.zkCommitment && (
                         <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700/50">
-                            <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Mint Address</p>
-                            <p className="font-mono text-xs text-slate-300 break-all">
-                                {driver.verificationBadge.mintAddress}
+                            <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">ZK Commitment (On-Chain)</p>
+                            <p className="font-mono text-[11px] text-slate-300 break-all">
+                                {formatCommitment(badge.zkCommitment)}
                             </p>
                         </div>
+                    )}
+
+                    <div className="flex flex-col gap-1.5">
                         <a
-                            href={driver.verificationBadge.explorerLink}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-2 text-xs font-semibold text-emerald-400 hover:text-emerald-300 transition-colors"
+                            href={badge.explorerLink}
+                            target="_blank" rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
                         >
-                            View Token-2022 Badge on Explorer <ExternalLink className="w-3 h-3" />
+                            <ExternalLink className="w-3 h-3" /> View Soulbound Badge on Explorer
                         </a>
                     </div>
                 </CardContent>
@@ -133,83 +181,162 @@ export default function VerificationPanel({ driver, onVerificationSuccess }: Ver
         );
     }
 
-    // ── Not yet verified ──────────────────────────────────────────────────
+    const steps = [
+        { id: 'credentials', label: '1. Credentials' },
+        { id: 'proof', label: '2. ZK Proof' },
+        { id: 'mint', label: '3. Mint Badge' },
+    ];
+
     return (
         <Card className="bg-slate-900/60 border-slate-700/50 shadow-lg">
             <CardHeader className="pb-3">
                 <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center">
-                        <Shield className="w-6 h-6 text-blue-400" />
+                        <Lock className="w-5 h-5 text-blue-400" />
                     </div>
                     <div>
-                        <CardTitle className="text-lg font-bold text-white">
-                            Get Blockchain Verified
-                        </CardTitle>
-                        <CardDescription className="text-slate-400">
-                            Mint a soulbound Token-2022 badge on Solana Devnet
+                        <CardTitle className="text-lg font-bold text-white">ZK Civic Identity</CardTitle>
+                        <CardDescription className="text-slate-400 text-xs">
+                            Prove eligibility without revealing personal data
                         </CardDescription>
                     </div>
                 </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-                <p className="text-sm text-slate-400">
-                    Mint a permanent Solana Verification Badge using your driver documents.
-                    This proves your identity to passengers and cannot be transferred or faked.
-                </p>
 
-                {/* Wallet address input */}
-                <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-400 flex items-center gap-1.5">
-                        <Wallet className="w-3.5 h-3.5" />
-                        Your Phantom / Solana Wallet Address (Devnet)
-                    </label>
-                    <input
-                        type="text"
-                        value={walletAddress}
-                        onChange={(e) => {
-                            setWalletAddress(e.target.value);
-                            if (walletError) setWalletError('');
-                        }}
-                        placeholder="e.g. 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAs"
-                        className={`w-full bg-slate-800/70 border rounded-lg px-3 py-2.5 text-xs font-mono text-slate-200 placeholder-slate-600 focus:outline-none focus:ring-2 transition-all ${walletError
-                                ? 'border-red-500/60 focus:ring-red-500/30'
-                                : 'border-slate-700 focus:ring-blue-500/30'
-                            }`}
-                        disabled={isVerifying}
-                    />
-                    {walletError && (
-                        <p className="text-xs text-red-400 mt-1">{walletError}</p>
-                    )}
-                    <p className="text-[11px] text-slate-600">
-                        Paste your Phantom wallet address. Get test SOL at{' '}
-                        <a
-                            href="https://faucet.solana.com"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-500 hover:underline"
-                        >
-                            faucet.solana.com
-                        </a>
-                    </p>
+                <div className="flex items-center gap-1 mt-3 pt-3 border-t border-slate-800">
+                    {steps.map((s, i) => (
+                        <div key={s.id} className="flex items-center gap-1 flex-1">
+                            <div className={`text-[10px] font-semibold px-2 py-1 rounded-full transition-all ${step === s.id
+                                ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
+                                : (steps.findIndex(x => x.id === step) > i)
+                                    ? 'text-emerald-400'
+                                    : 'text-slate-600'
+                                }`}>
+                                {steps.findIndex(x => x.id === step) > i ? '✓ ' : ''}{s.label}
+                            </div>
+                            {i < steps.length - 1 && <ChevronRight className="w-3 h-3 text-slate-700 shrink-0" />}
+                        </div>
+                    ))}
                 </div>
+            </CardHeader>
 
-                <Button
-                    onClick={handleVerify}
-                    disabled={isVerifying || !walletAddress.trim()}
-                    className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold"
-                >
-                    {isVerifying ? (
-                        <>
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            Minting on Solana Devnet...
-                        </>
-                    ) : (
-                        <>
-                            <Shield className="w-4 h-4 mr-2" />
-                            Verify on Blockchain
-                        </>
-                    )}
-                </Button>
+            <CardContent className="space-y-4">
+                {step === 'credentials' && (
+                    <>
+                        <div className="bg-blue-950/30 border border-blue-800/40 rounded-lg p-3">
+                            <p className="text-xs text-blue-300 flex items-start gap-2">
+                                <Lock className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                                <span>
+                                    Your license and birth year <strong>never leave this device</strong>.
+                                </span>
+                            </p>
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-semibold text-slate-400">License Number (Private)</label>
+                            <div className="relative">
+                                <input
+                                    type={showLicense ? 'text' : 'password'}
+                                    value={licenseNumber}
+                                    onChange={e => { setLicenseNumber(e.target.value); setErrors(prev => ({ ...prev, license: '' })); }}
+                                    placeholder="e.g. BA-12-PA-3456"
+                                    className={`w-full bg-slate-800/70 border rounded-lg px-3 py-2.5 pr-10 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:ring-2 transition-all ${errors.license ? 'border-red-500/60 focus:ring-red-500/30' : 'border-slate-700 focus:ring-blue-500/30'}`}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowLicense(!showLicense)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                                >
+                                    {showLicense ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                </button>
+                            </div>
+                            {errors.license && <p className="text-xs text-red-400">{errors.license}</p>}
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-semibold text-slate-400">Birth Year (Private — proves age ≥ 21)</label>
+                            <input
+                                type="number"
+                                value={birthYear}
+                                onChange={e => { setBirthYear(e.target.value); setErrors(prev => ({ ...prev, birthYear: '' })); }}
+                                placeholder="e.g. 1995"
+                                min={1920}
+                                max={2005}
+                                className={`w-full bg-slate-800/70 border rounded-lg px-3 py-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:ring-2 transition-all ${errors.birthYear ? 'border-red-500/60 focus:ring-red-500/30' : 'border-slate-700 focus:ring-blue-500/30'}`}
+                            />
+                            {errors.birthYear && <p className="text-xs text-red-400">{errors.birthYear}</p>}
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-semibold text-slate-400 flex items-center gap-1.5">
+                                <Wallet className="w-3.5 h-3.5" /> Phantom Wallet (Devnet)
+                            </label>
+                            <input
+                                type="text"
+                                value={walletAddress}
+                                onChange={e => { setWalletAddress(e.target.value); setErrors(prev => ({ ...prev, wallet: '' })); }}
+                                placeholder="Solana Wallet Address"
+                                className={`w-full bg-slate-800/70 border rounded-lg px-3 py-2.5 text-xs font-mono text-slate-200 focus:outline-none focus:ring-2 transition-all ${errors.wallet ? 'border-red-500/60 focus:ring-red-500/30' : 'border-slate-700 focus:ring-blue-500/30'}`}
+                            />
+                            {errors.wallet && <p className="text-xs text-red-400">{errors.wallet}</p>}
+                        </div>
+
+                        <Button
+                            onClick={handleGenerateProof}
+                            disabled={isGeneratingProof}
+                            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 font-semibold"
+                        >
+                            {isGeneratingProof ? (
+                                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Generating ZK Proof...</>
+                            ) : (
+                                <><Lock className="w-4 h-4 mr-2" /> Generate ZK Proof</>
+                            )}
+                        </Button>
+                    </>
+                )}
+
+                {step === 'proof' && (
+                    <>
+                        <div className="bg-emerald-950/30 border border-emerald-800/40 rounded-lg p-4 space-y-3">
+                            <div className="flex items-center gap-2">
+                                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                                <p className="text-sm font-bold text-emerald-300">ZK Proof Generated!</p>
+                            </div>
+                            <div className="bg-slate-900/60 rounded-lg p-3 border border-slate-700/50">
+                                <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Your ZK Commitment</p>
+                                <p className="font-mono text-[11px] text-blue-300 break-all">{formatCommitment(zkCommitment)}</p>
+                            </div>
+                        </div>
+
+                        <Button
+                            onClick={() => setStep('mint')}
+                            className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 font-semibold"
+                        >
+                            Continue to Mint Badge <ChevronRight className="w-4 h-4 ml-1" />
+                        </Button>
+                    </>
+                )}
+
+                {step === 'mint' && (
+                    <>
+                        <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-4 space-y-3">
+                            <p className="text-xs text-slate-400">
+                                The ZK proof will be verified server-side. If valid, a soulbound badge is minted to your wallet.
+                            </p>
+                        </div>
+
+                        <Button
+                            onClick={handleMint}
+                            disabled={isMinting}
+                            className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 font-semibold"
+                        >
+                            {isMinting ? (
+                                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Minting...</>
+                            ) : (
+                                <><Shield className="w-4 h-4 mr-2" /> Mint Verified Badge</>
+                            )}
+                        </Button>
+                    </>
+                )}
             </CardContent>
         </Card>
     );

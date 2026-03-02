@@ -21,6 +21,9 @@ export interface LiveUser {
     txSignature: string;
     explorerLink: string;
     verifiedAt: string;
+    zkCommitment?: string;
+    zkMemoExplorerLink?: string;
+    ageVerified?: boolean;
   };
 }
 
@@ -46,6 +49,12 @@ export interface Driver extends User {
     txSignature: string;
     explorerLink: string;
     verifiedAt: string;
+    // ZK Civic Identity fields (Phase 1 upgrade)
+    zkCommitment?: string;        // Poseidon commitment anchored on Solana
+    zkMemoSignature?: string;     // Tx signature of the on-chain Memo
+    zkMemoExplorerLink?: string;  // Explorer link for the Memo tx
+    zkDemoMode?: boolean;         // True if proof was not cryptographically verified
+    ageVerified?: boolean;        // True if ZK age proof passed
   };
 }
 
