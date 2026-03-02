@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Bus, Booking, VehicleTypeId } from '@/lib/types';
-import { VEHICLE_TYPES } from '@/lib/constants';
+import { VEHICLE_TYPES, DEFAULT_LOCATION } from '@/lib/constants';
 import {
   MapPin,
   Ticket,
@@ -60,6 +60,7 @@ export default function PassengerDashboard() {
     useState(false);
 
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [requestStatus, setRequestStatus] = useState<'idle' | 'requesting' | 'on-trip'>('idle');
   const [busLocations, setBusLocations] = useState<Record<string, {
     lat: number;
     lng: number;
@@ -103,8 +104,8 @@ export default function PassengerDashboard() {
             description: errorMessage + " Using default location.",
             variant: "destructive"
           });
-          // Fallback to Kathmandu (or a safe default) so map works
-          setUserLocation({ lat: 27.7172, lng: 85.3240 });
+          // Fallback to DEFAULT_LOCATION so map still works
+          setUserLocation({ lat: DEFAULT_LOCATION.lat, lng: DEFAULT_LOCATION.lng });
         }
       },
       {
@@ -690,6 +691,7 @@ export default function PassengerDashboard() {
           userLocation={userLocation}
           busETAs={busETAs}
           busLocations={busLocations}
+          requestStatus={requestStatus}
         />
 
         {/* Floating Action Button for Hailing (Overlaid on Map) */}
@@ -704,6 +706,7 @@ export default function PassengerDashboard() {
                     lng: userLocation.lng,
                     address: 'Current Location'
                   });
+                  setRequestStatus('requesting'); // 🚀 Flip to requesting so driver sees us
                 } else {
                   toast({ title: "Waiting for location...", variant: "default" });
                 }

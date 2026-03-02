@@ -6,6 +6,7 @@ export interface Location {
 }
 
 export type UserRole = 'driver' | 'passenger' | 'admin';
+export type RequestStatus = 'idle' | 'requesting' | 'on-trip';
 
 export interface LiveUser {
   id: string;
@@ -15,7 +16,8 @@ export interface LiveUser {
   isOnline: boolean;
   timestamp: string | number;
   route?: string;
-  vehicleType?: VehicleTypeId; // 👈 NEW: Added vehicleType
+  vehicleType?: VehicleTypeId;
+  requestStatus?: RequestStatus; // 'idle' | 'requesting' | 'on-trip'
   // Populated from Firebase users/{id}/verificationBadge for verified drivers
   verificationBadge?: {
     mintAddress: string;

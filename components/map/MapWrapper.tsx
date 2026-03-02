@@ -31,6 +31,7 @@ interface MapWrapperProps {
     pickupProximityLevel?: 'far' | 'approaching' | 'nearby' | 'arrived' | null;
     busETAs?: Record<string, number | null>;
     busLocations?: Record<string, { lat: number; lng: number; timestamp: string; heading?: number; speed?: number }>;
+    requestStatus?: 'idle' | 'requesting' | 'on-trip';
 }
 
 export default function MapWrapper(props: MapWrapperProps) {

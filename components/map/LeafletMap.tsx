@@ -35,6 +35,7 @@ interface LeafletMapProps {
     pickupProximityLevel?: 'far' | 'approaching' | 'nearby' | 'arrived' | null;
     busETAs?: Record<string, number | null>;
     busLocations?: Record<string, { lat: number; lng: number; timestamp: string; heading?: number; speed?: number }>;
+    requestStatus?: 'idle' | 'requesting' | 'on-trip';
 }
 
 function MapUpdater({ center, selectedUserId, userLocation }: { center: { lat: number; lng: number }, selectedUserId?: string, userLocation?: { lat: number; lng: number } | null }) {
@@ -159,9 +160,10 @@ class MapErrorBoundary extends Component<{ children: ReactNode, onRetry?: () => 
     }
 }
 
-function LeafletMapInner({ role, onLocationSelect, pickupLocation, dropoffLocation, userLocation, buses = [] }: LeafletMapProps) {
+function LeafletMapInner({ role, onLocationSelect, pickupLocation, dropoffLocation, userLocation, buses = [], requestStatus }: LeafletMapProps) {
     const { currentUser } = useAuth(); // FIX: Access real UID
     const [mounted, setMounted] = useState(false);
+    const [isMapReady, setIsMapReady] = useState(false); // Wait for GPS
     const [liveUsers, setLiveUsers] = useState<LiveUser[]>([]);
     const [currentPosition, setCurrentPosition] = useState<[number, number] | null>(null);
     const [vehicleType, setVehicleType] = useState<VehicleTypeId | undefined>(undefined);
@@ -185,14 +187,18 @@ function LeafletMapInner({ role, onLocationSelect, pickupLocation, dropoffLocati
         stableId,
         role === 'admin' ? undefined : (role as 'driver' | 'passenger'),
         false,
-        driverRoute
+        driverRoute,
+        undefined,          // vehicleType - handled separately
+        requestStatus       // Pass requestStatus so passengers can signal 'requesting'
     );
 
     useEffect(() => {
         if (liveLocation) {
             setCurrentPosition([liveLocation.lat, liveLocation.lng]);
+            setIsMapReady(true);
         } else if (userLocation && !currentPosition) {
             setCurrentPosition([userLocation.lat, userLocation.lng]);
+            setIsMapReady(true);
         }
     }, [liveLocation, userLocation]);
 
@@ -205,9 +211,13 @@ function LeafletMapInner({ role, onLocationSelect, pickupLocation, dropoffLocati
                     if (!u.lat || !u.lng) return false;
                     if (!u.isOnline) return false;
                     if (u.id === stableId) return false; // Hide self
-                    if (role === "admin") return true;
-                    if (role === "driver" && u.role === "passenger") return true;
-                    if (role === "passenger" && u.role === "driver") return true;
+                    if (role === 'admin') return true;
+                    // Passengers see all online drivers
+                    if (role === 'passenger' && u.role === 'driver') return true;
+                    // Drivers ONLY see passengers who are actively requesting a ride
+                    if (role === 'driver' && u.role === 'passenger') {
+                        return u.requestStatus === 'requesting';
+                    }
                     return false;
                 });
                 setLiveUsers(visibleUsers);
@@ -241,6 +251,22 @@ function LeafletMapInner({ role, onLocationSelect, pickupLocation, dropoffLocati
     }, [selectedUser, currentPosition]);
 
     if (!mounted) return <div className="w-full h-full min-h-[300px] bg-gray-100 flex items-center justify-center"><div className="animate-pulse w-11/12 h-64 bg-gray-200 rounded-lg" /></div>;
+
+    // Show GPS acquiring screen until we have a real location
+    if (!isMapReady) {
+        return (
+            <div className="w-full h-full min-h-[300px] bg-slate-900 flex flex-col items-center justify-center gap-4">
+                <div className="relative w-16 h-16">
+                    <div className="absolute inset-0 bg-cyan-500/30 rounded-full animate-ping" />
+                    <div className="relative w-16 h-16 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-xl">
+                        <span className="text-2xl">📍</span>
+                    </div>
+                </div>
+                <p className="text-slate-300 font-semibold text-sm">Acquiring GPS...</p>
+                <p className="text-slate-500 text-xs">Please allow location access</p>
+            </div>
+        );
+    }
 
     let center = DEFAULT_LOCATION;
     if (selectedUser) center = { lat: selectedUser.lat, lng: selectedUser.lng };

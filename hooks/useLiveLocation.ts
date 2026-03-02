@@ -1,13 +1,14 @@
 import { useEffect, useState, useRef } from 'react';
 import { updateLiveUserStatus } from '@/lib/firebaseDb';
-import { LiveUser, VehicleTypeId } from '@/lib/types';
+import { LiveUser, VehicleTypeId, RequestStatus } from '@/lib/types';
 
 export function useLiveLocation(
     id: string | undefined,
     role: 'driver' | 'passenger' | 'admin' | undefined,
     initialTracking: boolean = false,
     route?: string,
-    vehicleType?: VehicleTypeId // 👈 UPDATED: Using VehicleTypeId
+    vehicleType?: VehicleTypeId,
+    requestStatus?: RequestStatus // 'idle' | 'requesting' | 'on-trip'
 ) {
     const [isTracking, setIsTracking] = useState(initialTracking);
     const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -20,6 +21,14 @@ export function useLiveLocation(
         setIsTracking((prev) => !prev);
     };
 
+    // Derive the effective status:
+    // - Passengers default to 'idle' unless explicitly set
+    // - Drivers don't need a requestStatus
+    const effectiveStatus: RequestStatus | undefined =
+        role === 'passenger'
+            ? (requestStatus ?? 'idle')
+            : undefined;
+
     useEffect(() => {
         if (!isTracking || !id) {
             if (id && role) {
@@ -31,7 +40,8 @@ export function useLiveLocation(
                     lng: location?.lng || 0,
                     isOnline: false,
                     timestamp: new Date().toISOString(),
-                    vehicleType // 👈 Include when going offline
+                    vehicleType,
+                    requestStatus: effectiveStatus,
                 }).catch(console.error);
             }
 
@@ -63,10 +73,11 @@ export function useLiveLocation(
                 }
 
                 if (shouldUpdate) {
-                    console.log("📍 SENDING LOCATION:", {
+                    console.log('📍 SENDING LOCATION:', {
                         id,
                         role,
-                        vehicleType, // 👈 Log to verify it's sending
+                        vehicleType,
+                        requestStatus: effectiveStatus,
                         lat: latitude,
                         lng: longitude
                     });
@@ -82,7 +93,8 @@ export function useLiveLocation(
                             lng: longitude,
                             isOnline: true,
                             timestamp: new Date(now).toISOString(),
-                            vehicleType, // 👈 CRITICAL: Push this to Firebase
+                            vehicleType,
+                            requestStatus: effectiveStatus,
                             ...(route ? { route } : {})
                         };
 
@@ -111,8 +123,7 @@ export function useLiveLocation(
                 watchIdRef.current = null;
             }
         };
-        // Added vehicleType to dependency array
-    }, [isTracking, id, role, vehicleType, route]);
+    }, [isTracking, id, role, vehicleType, route, effectiveStatus]);
 
     return {
         location,
