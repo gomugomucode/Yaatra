@@ -619,7 +619,10 @@ export default function DriverDashboard() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: '#0B0E14', overflowY: 'scroll', scrollSnapType: 'y mandatory', height: '100dvh' }}>
+    <div
+      className="min-h-screen flex flex-col overflow-y-auto"
+      style={{ background: '#0B0E14', WebkitOverflowScrolling: 'touch' }}
+    >
       {/* ── 1. Cockpit Header ── */}
       <div className="sticky top-0 z-50 border-b border-slate-800/60 overflow-hidden"
         style={{ background: 'rgba(11,14,20,0.92)', backdropFilter: 'blur(20px)' }}
@@ -752,8 +755,10 @@ export default function DriverDashboard() {
       </div>
 
       {/* ── 2. Map Section ── */}
-      <div className="relative w-full shrink-0 border-b border-slate-800/60"
-        style={{ height: '100dvh', scrollSnapAlign: 'start' }}>
+      <div
+        className="relative w-full shrink-0 border-b border-slate-800/60"
+        style={{ height: '50vh', touchAction: 'pan-y' }}
+      >
         <MapWrapper
           role="driver"
           buses={buses}
@@ -766,7 +771,7 @@ export default function DriverDashboard() {
       </div>
 
       {/* ── 3. Scrollable Cockpit Sections ── */}
-      <div className="p-4 space-y-4" style={{ background: '#0B0E14', scrollSnapAlign: 'start', minHeight: '100dvh' }}>
+      <div className="p-4 space-y-4 pb-24" style={{ background: '#0B0E14' }}>
 
         {/* Bus Controls Section */}
         {selectedBus && (
@@ -797,7 +802,7 @@ export default function DriverDashboard() {
         {userData && (
           <section className="rounded-2xl border border-blue-500/20 overflow-hidden"
             style={{ boxShadow: '0 0 0 1px rgba(59,130,246,0.1), inset 0 0 40px rgba(59,130,246,0.03)' }}>
-            <div className="flex items-center gap-2 px-4 py-2.5 border-b border-slate-800/60"
+            <div className="flex items-center gap-2 px-4 py-2.5 border-b border-slate-800/60 relative z-[1000]"
               style={{ background: 'rgba(59,130,246,0.05)' }}>
               <Settings className="w-4 h-4 text-blue-400" />
               <span className="text-xs font-bold tracking-widest text-blue-300 uppercase">Security Clearance</span>
@@ -838,7 +843,75 @@ export default function DriverDashboard() {
       </div>
 
       {/* Accident Alert Popup */}
-      <AccidentAlert isOpen={isAccidentDetected} onConfirm={handleAccidentConfirm} onCancel={handleAccidentCancel} />
+      <div className="fixed inset-x-0 bottom-16 z-[1100] flex justify-center pointer-events-none">
+        <div className="pointer-events-auto">
+          <AccidentAlert
+            isOpen={isAccidentDetected}
+            onConfirm={handleAccidentConfirm}
+            onCancel={handleAccidentCancel}
+          />
+        </div>
+      </div>
+
+      {/* Fixed bottom safety bar (SOS + quick status) */}
+      <div className="fixed inset-x-0 bottom-0 z-[1200] bg-slate-950/95 border-t border-slate-800/70 backdrop-blur-md px-4 py-2 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+          <span className="text-[11px] font-semibold text-slate-200">
+            {isOnline ? 'Live tracking active' : 'You are offline'}
+          </span>
+        </div>
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button
+              variant="destructive"
+              size="sm"
+              className="h-9 px-4 font-black tracking-widest text-xs rounded-xl border border-red-500/60"
+              style={{
+                background: 'rgba(239,68,68,0.18)',
+                color: '#fecaca',
+                animation: 'sos-pulse 2s ease-in-out infinite',
+                boxShadow: '0 0 0 0 rgba(239,68,68,0.4)',
+              }}
+            >
+              SOS
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="bg-slate-900 border-slate-800 text-white sm:max-w-md rounded-2xl">
+            <DialogHeader>
+              <DialogTitle className="text-red-400 flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5" /> Emergency Report
+              </DialogTitle>
+              <DialogDescription className="text-slate-400">
+                This will immediately alert the admin team. Use only in emergencies.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid grid-cols-2 gap-4 py-4">
+              <Button
+                variant="outline"
+                className="h-24 flex flex-col gap-2 border-slate-700 hover:bg-red-950 hover:border-red-500 hover:text-red-400 rounded-xl"
+                onClick={() => handleReportEmergency('accident')}
+              >
+                <Car className="w-8 h-8" /> Accident
+              </Button>
+              <Button
+                variant="outline"
+                className="h-24 flex flex-col gap-2 border-slate-700 hover:bg-orange-950 hover:border-orange-500 hover:text-orange-400 rounded-xl"
+                onClick={() => handleReportEmergency('breakdown')}
+              >
+                <Wrench className="w-8 h-8" /> Breakdown
+              </Button>
+            </div>
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button variant="ghost" className="text-slate-400">
+                  Cancel
+                </Button>
+              </DialogClose>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
 
       {/* Global cockpit keyframes */}
       <style jsx global>{`
