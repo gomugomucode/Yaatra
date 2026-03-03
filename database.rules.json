@@ -1,9 +1,5 @@
 {
   "rules": {
-    "live_users": {
-        ".read": true,
-        ".write": true
-    },
     "buses": {
       ".read": true,
       "$busId": {
@@ -14,18 +10,23 @@
       }
     },
     "locations": {
-      ".read": true,
-      ".write": true
+      ".read": true, 
+      "$uid": {
+        ".write": "auth != null && (auth.uid === $uid || root.child('users').child(auth.uid).child('role').val() === 'admin')"
+      }
     },
     "bookings": {
-      ".read": "auth != null", 
+      ".read": "auth != null",
       ".write": "auth != null",
       ".indexOn": ["busId", "passengerId"]
     },
     "users": {
       "$uid": {
-        ".read": "auth != null && auth.uid === $uid",
-        ".write": "auth != null && auth.uid === $uid"
+        ".read": "auth != null", 
+        ".write": "auth != null && auth.uid === $uid",
+        "verificationBadge": {
+           ".validate": "newData.hasChildren(['mintAddress', 'txSignature'])"
+        }
       }
     },
     "alerts": {

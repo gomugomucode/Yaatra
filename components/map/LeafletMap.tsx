@@ -202,6 +202,12 @@ function LeafletMapInner({ role, onLocationSelect, pickupLocation, dropoffLocati
         }
     }, [liveLocation, userLocation]);
 
+    // Fallback: if GPS takes > 8s (denied / slow), load map at DEFAULT_LOCATION
+    useEffect(() => {
+        const timer = setTimeout(() => setIsMapReady(true), 8000);
+        return () => clearTimeout(timer);
+    }, []);
+
     useEffect(() => {
         let timeout: NodeJS.Timeout;
         const unsubscribe = subscribeToLiveUsers((users) => {

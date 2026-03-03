@@ -51,6 +51,9 @@ export const updateBusLocation = async (
 
     // Serialize location with timestamp as ISO string for Firebase
     const locationData = {
+        id: busId,           // ✅ Required: subscribeToLiveUsers reads entry.id
+        role: 'driver',      // ✅ Required: filter checks entry.role
+        isOnline: true,      // ✅ Required: filter checks entry.isOnline
         lat: location.lat,
         lng: location.lng,
         timestamp: new Date().toISOString(),
@@ -324,6 +327,8 @@ export const subscribeToLiveUsers = (callback: (users: LiveUser[]) => void) => {
                 isOnline: entry.isOnline ?? true,
                 timestamp: entry.timestamp,
                 route: entry.route,
+                vehicleType: entry.vehicleType,          // ✅ needed for driver markers
+                requestStatus: entry.requestStatus,      // ✅ needed for visibility filter
             })) as LiveUser[];
 
         // For drivers, fetch their user profile to attach verificationBadge.
@@ -365,7 +370,10 @@ export const updateLiveUserStatus = async (user: LiveUser) => {
         timestamp: typeof user.timestamp === 'number'
             ? new Date(user.timestamp).toISOString()
             : user.timestamp,
+        // ✅ Include optional fields so filters can read them
         ...(user.route ? { route: user.route } : {}),
+        ...(user.vehicleType ? { vehicleType: user.vehicleType } : {}),
+        ...(user.requestStatus ? { requestStatus: user.requestStatus } : {}),
     };
 
     // Write to `locations` node — read by subscribeToLiveUsers on the map
