@@ -500,6 +500,15 @@ export default function DriverDashboard() {
     setLocationEnabled(enabled);
     setIsOnline(enabled);
 
+    // Force geolocation permission prompt immediately
+    if (enabled && typeof navigator !== 'undefined' && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        () => { },
+        () => { },
+        { enableHighAccuracy: true, timeout: 5000 }
+      );
+    }
+
     if (selectedBus) {
       setSelectedBus({
         ...selectedBus,

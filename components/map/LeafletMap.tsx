@@ -58,8 +58,9 @@ function MapUpdater({ center, selectedUserId, userLocation }: { center: { lat: n
         const movedSignificantly = lastCenteredLat !== null &&
             Math.abs(userLocation.lat - lastCenteredLat) > 0.5;
 
+        // Auto-center map to zoom level 14 once location is acquired
         if (!hasCenteredOnUser || movedSignificantly) {
-            map.flyTo([userLocation.lat, userLocation.lng], 16);
+            map.flyTo([userLocation.lat, userLocation.lng], 14);
             setHasCenteredOnUser(true);
             setLastCenteredLat(userLocation.lat);
         }
@@ -97,6 +98,19 @@ const createDriverRippleIcon = () => L.divIcon({
     iconAnchor: [24, 24],
 });
 
+/** Smooth pulse effect for the passenger's current location to match the LIVE aesthetic */
+const createUserPulseIcon = () => L.divIcon({
+    className: 'custom-pulse-icon',
+    html: `
+      <div style="position: relative; display: flex; align-items: center; justify-content: center; width: 24px; height: 24px;">
+        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+        <span class="relative inline-flex rounded-full h-4 w-4 bg-emerald-500 border-2 border-white shadow-[0_0_10px_rgba(16,185,129,0.8)]"></span>
+      </div>
+    `,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+});
+
 function MapEvents({ onLocationSelect, role }: { onLocationSelect?: (loc: { lat: number; lng: number }) => void; role: string; }) {
     useMapEvents({
         click(e) {
@@ -126,7 +140,7 @@ function MapControls({ initialCenter, userLocation }: { initialCenter: { lat: nu
         navigator.geolocation.getCurrentPosition(
             (position) => {
                 const { latitude, longitude } = position.coords;
-                map.setView([latitude, longitude], 16);
+                map.flyTo([latitude, longitude], 14); // flyTo zooming to 14
                 setLocating(false);
             },
             () => setLocating(false),
@@ -281,9 +295,13 @@ function LeafletMapInner({
             timeout = setTimeout(() => {
                 const visibleUsers = users.filter((u: any) => {
                     if (!Number.isFinite(u.lat) || !Number.isFinite(u.lng)) return false;
-                    if (!u.isOnline) return false;
-                    if (u.id === stableId) return false; // Hide self
-                    if (role === 'admin') return true;
+                    // Remove 'ghost' cars: require active online status AND location ping within last 30 seconds
+                    if (!u.isOnline || u.status === 'offline') return false;
+
+                    const now = Date.now();
+                    const lastSeen = u.timestamp ? new Date(u.timestamp).getTime() : 0;
+                    if (now - lastSeen > 30000) return false;
+
                     // Passenger map focuses to the hailed driver once handshake starts.
                     if (role === 'passenger' && u.role === 'driver') {
                         return hailedDriverId ? u.id === hailedDriverId : true;
@@ -416,7 +434,9 @@ function LeafletMapInner({
                     </Marker>
                 )}
                 {currentPosition && role !== 'driver' && (
-                    <Marker position={currentPosition} zIndexOffset={1200}><Popup>You (Live)</Popup></Marker>
+                    <Marker position={currentPosition} icon={createUserPulseIcon()} zIndexOffset={1200}>
+                        <Popup><b>You (Live)</b></Popup>
+                    </Marker>
                 )}
 
                 {liveUsers.map((user) => (
