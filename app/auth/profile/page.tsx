@@ -24,6 +24,7 @@ import { createUserProfile } from '@/lib/firebaseDb';
 import { VEHICLE_TYPES, DEFAULT_LOCATION } from '@/lib/constants';
 import { VehicleTypeId } from '@/lib/types';
 import { getDatabase, ref, set as rtdbSet } from 'firebase/database';
+import { YatraOnboardingWizard } from '@/components/onboarding/YatraOnboardingWizard';
 
 const driverSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
@@ -96,6 +97,7 @@ function ProfilePageContent() {
   const [vehiclePreview, setVehiclePreview] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(1);
   const [hasRedirected, setHasRedirected] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(true);
 
   // Get role from URL params as fallback (for phone auth flow)
   const roleFromUrl = searchParams.get('role') as 'driver' | 'passenger' | null;
@@ -461,6 +463,32 @@ function ProfilePageContent() {
   }
 
   const isDriver = effectiveRole === 'driver';
+
+  if (showOnboarding) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-slate-950 relative overflow-hidden px-4 py-10 flex items-center justify-center">
+        <YatraOnboardingWizard
+          initialRole={isDriver ? 'driver' : 'passenger'}
+          onComplete={(data) => {
+            if (data.role === 'driver') {
+              driverForm.reset({
+                ...driverForm.getValues(),
+                name: data.name || driverForm.getValues('name'),
+                licenseNumber: data.licenseNumber || driverForm.getValues('licenseNumber'),
+              });
+            } else {
+              passengerForm.reset({
+                ...passengerForm.getValues(),
+                name: data.name || passengerForm.getValues('name'),
+              });
+            }
+            setShowOnboarding(false);
+            setCurrentStep(2);
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-slate-950 relative overflow-hidden">

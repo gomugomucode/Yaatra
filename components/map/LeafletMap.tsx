@@ -40,11 +40,10 @@ interface LeafletMapProps {
     activeTripId?: string | null;
 }
 
-function MapUpdater({ center, selectedUserId, userLocation }: { center: { lat: number; lng: number }, selectedUserId?: string, userLocation?: { lat: number; lng: number } | null }) {
+function MapUpdater({ center, selectedUserId, currentPosition }: { center: { lat: number; lng: number }, selectedUserId?: string, currentPosition?: [number, number] | null }) {
     const map = useMap();
     const [lastUserId, setLastUserId] = useState<string | undefined>(undefined);
-    const [hasCenteredOnUser, setHasCenteredOnUser] = useState(false);
-    const [lastCenteredLat, setLastCenteredLat] = useState<number | null>(null);
+    const [hasCenteredOnce, setHasCenteredOnce] = useState(false);
 
     useEffect(() => {
         if (selectedUserId && selectedUserId !== lastUserId) {
@@ -54,17 +53,21 @@ function MapUpdater({ center, selectedUserId, userLocation }: { center: { lat: n
     }, [center, selectedUserId, lastUserId, map]);
 
     useEffect(() => {
-        if (!userLocation) return;
-        const movedSignificantly = lastCenteredLat !== null &&
-            Math.abs(userLocation.lat - lastCenteredLat) > 0.5;
+        if (!currentPosition) return;
 
-        // Auto-center map to zoom level 14 once location is acquired
-        if (!hasCenteredOnUser || movedSignificantly) {
-            map.flyTo([userLocation.lat, userLocation.lng], 14);
-            setHasCenteredOnUser(true);
-            setLastCenteredLat(userLocation.lat);
+        // Auto-center map to zoom level 14 once location is first acquired
+        if (!hasCenteredOnce) {
+            map.flyTo(currentPosition, 14);
+            setHasCenteredOnce(true);
+        } else {
+            // If GPS drifts drastically (e.g. initial fake location -> real location)
+            const mapCenter = map.getCenter();
+            const distance = map.distance(mapCenter, currentPosition);
+            if (distance > 3000) { // 3km threshold
+                map.flyTo(currentPosition, 14);
+            }
         }
-    }, [userLocation, hasCenteredOnUser, lastCenteredLat, map]);
+    }, [currentPosition, hasCenteredOnce, map]);
 
     return null;
 }
@@ -423,7 +426,7 @@ function LeafletMapInner({
             >
                 <MapEvents onLocationSelect={onLocationSelect} role={role} />
                 <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                <MapUpdater center={center} selectedUserId={selectedUser?.id} userLocation={userLocation} />
+                <MapUpdater center={center} selectedUserId={selectedUser?.id} currentPosition={currentPosition} />
                 <MapControls initialCenter={center} userLocation={userLocation} />
                 <TrackingControls role={role} isTracking={isTracking} onToggleTracking={toggleTracking} currentPosition={currentPosition} />
 

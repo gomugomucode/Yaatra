@@ -16,7 +16,9 @@ import {
   Navigation,
   Clock,
   Smartphone,
-  Users
+  Users,
+  UserCircle,
+  LogOut,
 } from 'lucide-react';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
@@ -28,6 +30,7 @@ import { checkProximity, haversineDistance, ProximityLevel } from '@/lib/utils/g
 import { toast as sonnerToast } from 'sonner';
 import { NotificationToast } from '@/components/shared/NotificationToast';
 import DetailedBookingModal from '@/components/passenger/DetailedBookingModal';
+import { YatraProfileDrawer } from '@/components/passenger/YatraProfileDrawer';
 import { calculateETA } from '@/lib/utils/etaCalculator';
 import LocationSearch from '@/components/map/LocationSearch';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -35,8 +38,9 @@ import { useProximityHandshake } from '@/hooks/useProximityHandshake';
 
 export default function PassengerDashboard() {
   const router = useRouter();
-  const { currentUser, role, loading, signOut } = useAuth();
+  const { currentUser, role, loading, signOut, userData } = useAuth();
   const { toast } = useToast();
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [buses, setBuses] = useState<Bus[]>([]);
   const [selectedBus, setSelectedBus] = useState<Bus | null>(null);
   const [pickupLocation, setPickupLocation] = useState<{ lat: number; lng: number; address?: string } | null>(null);
@@ -817,24 +821,38 @@ export default function PassengerDashboard() {
             </div>
           </div>
 
-          {/* Right: Actions */}
-          <div className="flex items-center gap-2">
+          {/* Right section - Actions */}
+          <div className="flex items-center gap-3 relative z-[100] pointer-events-auto">
+
             <DetailedBookingModal />
 
-            {/* Sign Out Button */}
+            {/* FIXED AVATAR BUTTON */}
             <Button
-              variant="ghost"
-              onClick={signOut}
+              variant="outline"
               size="icon"
-              className="w-9 h-9 rounded-full bg-slate-900/50 border border-slate-700/50 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+              className="relative z-[101] w-10 h-10 rounded-full bg-slate-900 border-2 border-cyan-500/50 hover:border-cyan-400 hover:bg-slate-800 shadow-[0_0_15px_rgba(34,211,238,0.3)] transition-all duration-300"
+              onClick={() => {
+                console.log("Drawer Triggered!");
+                setIsDrawerOpen(true);
+              }}
             >
-              <span className="sr-only">Sign Out</span>
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                <polyline points="16 17 21 12 16 7" />
-                <line x1="21" x2="9" y1="12" y2="12" />
-              </svg>
+              {userData?.name ? (
+                <span className="text-sm font-black text-cyan-400">
+                  {userData.name[0].toUpperCase()}
+                </span>
+              ) : (
+                <UserCircle className="w-6 h-6 text-cyan-400" />
+              )}
+
+              {/* Small green "Online" dot to make it look pro */}
+              <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-slate-900 rounded-full shadow-sm"></span>
             </Button>
+
+            {/* THE DRAWER (Ensure this is outside the button) */}
+            <YatraProfileDrawer
+              open={isDrawerOpen}
+              onOpenChange={setIsDrawerOpen}
+            />
           </div>
         </div>
 
@@ -951,7 +969,9 @@ export default function PassengerDashboard() {
         </div>
 
         {/* Trip History & NFT Receipts */}
-        <TripHistory />
+        <div id="trip-history">
+          <TripHistory />
+        </div>
 
         {/* Instructions / Tips */}
         {!selectedBus && (

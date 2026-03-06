@@ -1,6 +1,6 @@
 <div align="center">
 
-# Yatra
+# यात्री · Yatra
 
 **Nepal's Transit Ecosystem, Tokenized & Verifiable.**
 
@@ -16,7 +16,7 @@
 
 ## Overview
 
-**Yatra** is a decentralized transport application built for the Nepal transit ecosystem. It combines real-time bus tracking with blockchain-powered trust—issuing **Soulbound NFT receipts** on Solana for every trip and using **ZK-Civic** to verify driver identity without exposing private data.
+**Yatra** (यात्री) is a decentralized transport application built for the Nepal transit ecosystem. It combines real-time bus tracking with blockchain-powered trust—issuing **Soulbound NFT receipts** on Solana for every trip and using **ZK-Civic** to verify driver identity without exposing private data.
 
 ---
 
@@ -84,7 +84,7 @@ Yatra is built on a three-layer hybrid stack:
 ### Installation
 
 ```bash
-git clone https://github.com/Since2024/yatra.git
+git clone https://github.com/your-repo/yatra.git
 cd yatra
 npm install
 ```
@@ -141,12 +141,6 @@ yatra/
 │   └── firebaseDb.ts   # Real-time DB operations
 └── circuits/           # ZK circuit definitions
 ```
-
----
-
-## License
-
-Private repository. Built for the Nepal Transit Ecosystem.
 
 ---
 

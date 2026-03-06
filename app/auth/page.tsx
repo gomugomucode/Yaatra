@@ -1,42 +1,27 @@
 'use client';
 
 import { useState, useEffect, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { FirebaseError } from 'firebase/app';
-import { Bus, User2, Phone, ShieldCheck, Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import { User2, Bus, Mail, Lock, Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useToast } from '@/components/ui/use-toast';
-import { getFirebaseAuth, signInWithEmail, createUserWithEmail, sendPasswordReset } from '@/lib/firebase';
+import {
+  getFirebaseAuth,
+  signInWithEmail,
+  createUserWithEmail,
+  sendPasswordReset,
+  signInWithGoogle,
+} from '@/lib/firebase';
 import { getUserProfile } from '@/lib/firebaseDb';
 
 type Role = 'driver' | 'passenger';
-type AuthMethod = 'phone' | 'email';
 
-const mapFirebaseError = (err: unknown) => {
+const mapFirebaseError = (err: unknown): string => {
   if (err instanceof FirebaseError) {
     switch (err.code) {
-      case 'auth/configuration-not-found':
-        return 'Phone authentication is not fully configured. Please enable Phone provider and reCAPTCHA in Firebase console.';
-      case 'auth/invalid-phone-number':
-        return 'The phone number format looks incorrect. Please double-check and try again.';
-      case 'auth/too-many-requests':
-        return 'Too many attempts. Please wait a moment before trying again.';
-      case 'auth/billing-not-enabled':
-        return 'Phone authentication requires Blaze (pay-as-you-go) billing in Firebase.';
-      case 'auth/invalid-verification-code':
-        return 'Invalid verification code. Please try again.';
-      case 'auth/code-expired':
-        return 'Verification code has expired. Please request a new one.';
       case 'auth/email-already-in-use':
         return 'This email is already registered. Please sign in instead.';
       case 'auth/invalid-email':
@@ -49,6 +34,10 @@ const mapFirebaseError = (err: unknown) => {
         return 'Password should be at least 6 characters.';
       case 'auth/invalid-credential':
         return 'Invalid email or password. Please check your credentials.';
+      case 'auth/popup-closed-by-user':
+        return 'Sign-in was cancelled.';
+      case 'auth/popup-blocked':
+        return 'Popup was blocked. Please allow popups and try again.';
       default:
         return err.message;
     }
@@ -60,14 +49,7 @@ const mapFirebaseError = (err: unknown) => {
   return 'Something went wrong. Please try again.';
 };
 
-const isFirestoreOfflineError = (err: unknown): err is FirebaseError => {
-  return (
-    err instanceof FirebaseError &&
-    (err.code === 'unavailable' || err.message.toLowerCase().includes('client is offline'))
-  );
-};
-
-const isProfileComplete = (data: any) => {
+const isProfileComplete = (data: any): boolean => {
   if (!data) return false;
   if (data.role === 'driver') {
     return !!(data.name && data.vehicleNumber && data.licenseNumber && data.route);
@@ -78,177 +60,112 @@ const isProfileComplete = (data: any) => {
   return false;
 };
 
+/** After Firebase login: if user exists in Realtime DB users/{uid} and profile complete → dashboard; else → profile. */
+async function resolvePostLoginRedirect(
+  uid: string,
+  selectedRole: Role,
+  idToken: string,
+  setRole: (r: Role | null) => void,
+  router: ReturnType<typeof useRouter>
+): Promise<'dashboard' | 'profile'> {
+  let userData: any = null;
+  try {
+    userData = await getUserProfile(uid);
+  } catch {
+    // e.g. offline or permission; treat as new user
+  }
+
+  const hasProfile = userData != null && isProfileComplete(userData);
+  const role = hasProfile ? (userData.role as Role) : selectedRole;
+
+  const sessionRes = await fetch('/api/sessionLogin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ idToken, role }),
+  });
+  if (!sessionRes.ok) {
+    const payload = await sessionRes.json().catch(() => ({}));
+    throw new Error((payload as { error?: string }).error || 'Session creation failed');
+  }
+
+  setRole(role);
+
+  if (hasProfile) {
+    const path = role === 'driver' ? '/driver' : '/passenger';
+    router.replace(path);
+    return 'dashboard';
+  }
+
+  router.replace(`/auth/profile?role=${selectedRole}`);
+  return 'profile';
+}
+
 function AuthContent() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { signInWithPhone, verifyOTP, setRole } = useAuth();
+  const { setRole, currentUser, loading: authLoading, userData, role } = useAuth();
   const { toast } = useToast();
 
-  const [step, setStep] = useState<'role' | 'auth'>('role');
-  const [selectedRole, setSelectedRole] = useState<Role | null>(null);
-  const [authMethod, setAuthMethod] = useState<AuthMethod>('phone');
-  const [isSignUp, setIsSignUp] = useState(false);
-
-  // Phone auth state
-  const [phone, setPhone] = useState('');
-  const [isSending, setIsSending] = useState(false);
-  const [otp, setOtp] = useState('');
-  const [confirmationResult, setConfirmationResult] = useState<any | null>(null);
-  const [otpOpen, setOtpOpen] = useState(false);
-  const [isVerifying, setIsVerifying] = useState(false);
-
-  // Email auth state
+  const [selectedRole, setSelectedRole] = useState<Role>('passenger');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [loading, setLoading] = useState<'idle' | 'google' | 'email'>('idle');
 
-  const fullPhone = `+977${phone.replace(/\D/g, '')}`;
+  // If user is logged in (on auth page), check users/${uid} in Realtime Database.
+  // If data exists → redirect to /dashboard; if missing → redirect to /profile.
+  useEffect(() => {
+    if (authLoading || !currentUser || pathname !== '/auth') return;
+    const profilePath = role ? `/auth/profile?role=${role}` : '/auth/profile';
+    if (userData != null) {
+      router.replace('/dashboard');
+    } else {
+      router.replace(profilePath);
+    }
+  }, [authLoading, currentUser, userData, role, router, pathname]);
 
-  // Auto-select role from URL parameter
+  // Sync role from URL
   useEffect(() => {
     const roleParam = searchParams.get('role') as Role | null;
-    if (roleParam && (roleParam === 'driver' || roleParam === 'passenger')) {
+    if (roleParam === 'driver' || roleParam === 'passenger') {
       setSelectedRole(roleParam);
-      setStep('auth');
     }
   }, [searchParams]);
 
-  const handleRoleSelect = (role: Role) => {
-    setSelectedRole(role);
-    setStep('auth');
-
-    // Keep URL in sync with the selected role so links/tabs behave correctly
+  const setRoleInUrl = (role: Role) => {
     const params = new URLSearchParams(Array.from(searchParams.entries()));
     params.set('role', role);
-    const query = params.toString();
-    router.replace(`/auth${query ? `?${query}` : ''}`, { scroll: false });
+    router.replace(`/auth?${params.toString()}`, { scroll: false });
   };
 
-  const handleSendOtp = async () => {
-    if (isSending || confirmationResult || !selectedRole) {
-      return;
-    }
-
-    if (!phone || phone.replace(/\D/g, '').length < 8) {
-      toast({
-        variant: 'destructive',
-        title: 'Invalid phone number',
-        description: 'Please enter a valid 10-digit Nepali phone number.',
-      });
-      return;
-    }
-
+  const handleGoogleSignIn = async () => {
+    if (loading !== 'idle') return;
+    setLoading('google');
     try {
-      setIsSending(true);
-      const result = await signInWithPhone(fullPhone, selectedRole);
-      setConfirmationResult(result);
-      setOtpOpen(true);
+      const cred = await signInWithGoogle();
+      const user = cred.user;
+      const idToken = await user.getIdToken(true);
+      await resolvePostLoginRedirect(user.uid, selectedRole, idToken, setRole, router);
       toast({
-        title: 'OTP sent',
-        description: `Verification code sent to ${fullPhone}`,
+        title: 'Welcome to Yatra',
+        description: 'You’re signed in.',
       });
     } catch (err: unknown) {
       console.error(err);
       toast({
         variant: 'destructive',
-        title: 'Failed to send OTP',
+        title: 'Sign-in failed',
         description: mapFirebaseError(err),
       });
     } finally {
-      setIsSending(false);
+      setLoading('idle');
     }
   };
 
-  const handleVerifyOtp = async (codeOverride?: string) => {
-    if (!confirmationResult || !selectedRole || isVerifying) return;
-
-    const codeToVerify = (codeOverride ?? otp).replace(/\D/g, '').slice(0, 6);
-    if (codeOverride && codeOverride !== otp) {
-      setOtp(codeToVerify);
-    }
-
-    if (!codeToVerify || codeToVerify.length < 6) {
-      toast({
-        variant: 'destructive',
-        title: 'Invalid code',
-        description: 'Please enter the 6-digit verification code.',
-      });
-      return;
-    }
-
-    let shouldCompleteProfile = false;
-
-    try {
-      setIsVerifying(true);
-      await verifyOTP(confirmationResult, codeToVerify, selectedRole);
-
-      try {
-        // Check if user needs to complete profile (skip if offline)
-        const user = getFirebaseAuth().currentUser;
-        if (user) {
-          const userData = await getUserProfile(user.uid);
-          shouldCompleteProfile = !userData || !isProfileComplete(userData);
-        }
-      } catch (firestoreErr) {
-        if (isFirestoreOfflineError(firestoreErr)) {
-          console.warn('[Auth] Skipping Firestore profile check (offline).');
-          toast({
-            title: 'Signed in offline',
-            description: 'We will sync your profile once the connection is back.',
-          });
-        } else {
-          throw firestoreErr;
-        }
-      }
-
-      if (shouldCompleteProfile) {
-        router.push(`/auth/profile?role=${selectedRole}`);
-        return;
-      }
-
-      // Existing user - redirect to dashboard
-      const target = selectedRole === 'driver' ? '/driver' : '/passenger';
-      router.replace(target);
-      toast({
-        title: 'Welcome back!',
-        description: 'Successfully signed in.',
-      });
-    } catch (err: unknown) {
-      console.error(err);
-      toast({
-        variant: 'destructive',
-        title: 'Verification failed',
-        description: mapFirebaseError(err),
-      });
-      setOtp('');
-    } finally {
-      setIsVerifying(false);
-    }
-  };
-
-  // Auto-submit OTP when 6 digits are entered
-  const handleOtpChange = (value: string) => {
-    const digits = value.replace(/\D/g, '').slice(0, 6);
-    setOtp(digits);
-    if (digits.length === 6 && confirmationResult) {
-      handleVerifyOtp(digits);
-    }
-  };
-
-  // Email/Password Authentication
   const handleEmailAuth = async () => {
-    if (!selectedRole || isAuthenticating) return;
-
-    if (!email || !password) {
-      toast({
-        variant: 'destructive',
-        title: 'Missing fields',
-        description: 'Please enter both email and password.',
-      });
-      return;
-    }
-
+    if (loading !== 'idle' || !email || !password) return;
     if (password.length < 6) {
       toast({
         variant: 'destructive',
@@ -257,96 +174,48 @@ function AuthContent() {
       });
       return;
     }
-
+    setLoading('email');
     try {
-      setIsAuthenticating(true);
-
       let userCredential;
       if (isSignUp) {
-        // Sign up
         userCredential = await createUserWithEmail(email, password);
-
-        // Register user in backend (for custom claims) - Non-blocking
-        let idToken = await userCredential.user.getIdToken();
+        const idToken = await userCredential.user.getIdToken();
         try {
-          const response = await fetch('/api/auth/register', {
+          await fetch('/api/auth/register', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               idToken,
               role: selectedRole,
-              userData: {
-                email: email,
-                phone: '',
-                name: email.split('@')[0],
-              },
+              userData: { email, phone: '', name: email.split('@')[0] },
             }),
           });
-
-          if (!response.ok) {
-            console.warn('Backend registration failed, but user was created in Firebase Auth');
-          }
-        } catch (err) {
-          console.warn('Backend registration error:', err);
+        } catch {
+          // non-blocking
         }
-
-        // Create session for the new user (reuse idToken from above)
-        await fetch('/api/sessionLogin', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ idToken, role: selectedRole }),
-        });
-
-        // Set role in context
-        setRole(selectedRole);
-
+        await resolvePostLoginRedirect(
+          userCredential.user.uid,
+          selectedRole,
+          idToken,
+          setRole,
+          router
+        );
         toast({
-          title: 'Account created!',
-          description: 'Please complete your profile to continue.',
+          title: 'Account created',
+          description: 'Complete your profile to continue.',
         });
-
-        // Redirect to profile page to complete setup
-        router.push(`/auth/profile?role=${selectedRole}`);
       } else {
-        // Sign in
         userCredential = await signInWithEmail(email, password);
-
-        // Create session
         const idToken = await userCredential.user.getIdToken();
-        await fetch('/api/sessionLogin', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ idToken, role: selectedRole }),
-        });
-
-        // Check if profile exists (skip if offline)
-        let shouldCompleteProfile = false;
-        try {
-          const userData = await getUserProfile(userCredential.user.uid);
-          shouldCompleteProfile = !userData || !isProfileComplete(userData);
-        } catch (firestoreErr) {
-          if (isFirestoreOfflineError(firestoreErr)) {
-            console.warn('[Auth] Skipping Firestore profile check (offline).');
-            toast({
-              title: 'Signed in offline',
-              description: 'We will sync your profile once the connection is back.',
-            });
-          } else {
-            throw firestoreErr;
-          }
-        }
-
-        if (shouldCompleteProfile) {
-          router.push(`/auth/profile?role=${selectedRole}`);
-          return;
-        }
-
-        // Redirect to dashboard
-        const target = selectedRole === 'driver' ? '/driver' : '/passenger';
-        router.replace(target);
-
+        await resolvePostLoginRedirect(
+          userCredential.user.uid,
+          selectedRole,
+          idToken,
+          setRole,
+          router
+        );
         toast({
-          title: 'Welcome back!',
+          title: 'Welcome back',
           description: 'Successfully signed in.',
         });
       }
@@ -358,7 +227,7 @@ function AuthContent() {
         description: mapFirebaseError(err),
       });
     } finally {
-      setIsAuthenticating(false);
+      setLoading('idle');
     }
   };
 
@@ -367,16 +236,15 @@ function AuthContent() {
       toast({
         variant: 'destructive',
         title: 'Email required',
-        description: 'Please enter your email address.',
+        description: 'Enter your email address first.',
       });
       return;
     }
-
     try {
       await sendPasswordReset(email);
       toast({
-        title: 'Password reset email sent',
-        description: 'Check your inbox for instructions to reset your password.',
+        title: 'Check your email',
+        description: 'Password reset instructions sent.',
       });
     } catch (err: unknown) {
       console.error(err);
@@ -388,368 +256,205 @@ function AuthContent() {
     }
   };
 
+  const isBusy = loading !== 'idle';
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-slate-950 flex items-center justify-center px-4 py-8 relative overflow-hidden">
-      {/* Animated Background */}
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center px-4 py-8 relative overflow-hidden">
+      {/* Background */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-pulse delay-700"></div>
-        <div className="absolute top-1/2 left-1/2 w-96 h-96 bg-cyan-500/20 rounded-full blur-3xl animate-pulse delay-1000"></div>
+        <div className="absolute top-0 right-0 w-[480px] h-[480px] bg-emerald-500/15 rounded-full blur-3xl" />
+        <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-cyan-500/15 rounded-full blur-3xl" />
       </div>
 
-      <div className="w-full max-w-2xl space-y-6 relative z-10">
+      <div className="w-full max-w-md space-y-6 relative z-10">
         {/* Header */}
-        <div className="text-center space-y-4">
-          <div className="inline-flex items-center gap-3 px-5 py-2.5 rounded-full bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border border-blue-400/20 backdrop-blur-sm">
-            <div className="relative flex h-3 w-3">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-cyan-500"></span>
-            </div>
-            <ShieldCheck className="w-4 h-4 text-cyan-400" />
-            <span className="text-sm font-medium text-cyan-400">Secure Authentication</span>
+        <div className="text-center space-y-3">
+          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-slate-900/60 backdrop-blur-md px-4 py-2">
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <span className="text-sm font-medium text-emerald-300">Yatra</span>
           </div>
-
-          <h1 className="text-4xl md:text-5xl font-black text-white leading-tight">
-            Welcome to
-            <br />
-            <span className="bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-600 bg-clip-text text-transparent">
-              Bus Tracker
+          <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight">
+            Welcome to{' '}
+            <span className="bg-gradient-to-r from-emerald-400 via-cyan-400 to-teal-400 bg-clip-text text-transparent">
+              Yatra
             </span>
           </h1>
-
-          <p className="text-lg text-slate-300 max-w-md mx-auto">
-            {step === 'role'
-              ? 'Choose your role to get started'
-              : 'Sign in to continue your journey'}
+          <p className="text-slate-400 text-sm">
+            Sign in to continue. Phone number is collected in the next step.
           </p>
         </div>
 
-        {step === 'role' ? (
-          <div className="grid md:grid-cols-2 gap-6">
-            {/* Driver Card */}
-            <div
-              onClick={() => handleRoleSelect('driver')}
-              className="group cursor-pointer relative"
-            >
-              <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-2xl blur opacity-25 group-hover:opacity-50 transition-opacity"></div>
-              <div className="relative bg-slate-900/80 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-8 hover:border-blue-400/50 transition-all duration-300 hover:scale-105">
-                <div className="mb-6 w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center mx-auto shadow-lg shadow-blue-500/50">
-                  <Bus className="w-10 h-10 text-white" />
-                </div>
-                <h3 className="text-2xl font-bold text-white mb-3 text-center">
-                  I'm a Driver
-                </h3>
-                <p className="text-slate-400 text-center text-sm leading-relaxed">
-                  Manage your bus, track passengers, and update your location in real-time
-                </p>
-              </div>
-            </div>
+        {/* Role tabs */}
+        <div className="flex p-1 rounded-2xl bg-slate-900/60 border border-slate-700/60 backdrop-blur-md">
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedRole('passenger');
+              setRoleInUrl('passenger');
+            }}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all ${
+              selectedRole === 'passenger'
+                ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white shadow-lg shadow-emerald-500/25'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <User2 className="w-4 h-4" />
+            Passenger
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedRole('driver');
+              setRoleInUrl('driver');
+            }}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all ${
+              selectedRole === 'driver'
+                ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white shadow-lg shadow-emerald-500/25'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Bus className="w-4 h-4" />
+            Driver
+          </button>
+        </div>
 
-            {/* Passenger Card */}
-            <div
-              onClick={() => handleRoleSelect('passenger')}
-              className="group cursor-pointer relative"
-            >
-              <div className="absolute inset-0 bg-gradient-to-r from-cyan-500 to-purple-500 rounded-2xl blur opacity-25 group-hover:opacity-50 transition-opacity"></div>
-              <div className="relative bg-slate-900/80 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-8 hover:border-cyan-400/50 transition-all duration-300 hover:scale-105">
-                <div className="mb-6 w-20 h-20 rounded-2xl bg-gradient-to-br from-cyan-500 to-purple-500 flex items-center justify-center mx-auto shadow-lg shadow-cyan-500/50">
-                  <User2 className="w-10 h-10 text-white" />
-                </div>
-                <h3 className="text-2xl font-bold text-white mb-3 text-center">
-                  I'm a Passenger
-                </h3>
-                <p className="text-slate-400 text-center text-sm leading-relaxed">
-                  Find nearby buses, book seats, and track your ride live
-                </p>
-              </div>
-            </div>
-          </div>
-        ) : (
+        {/* Card */}
+        <div className="rounded-2xl border border-slate-700/60 bg-slate-900/70 backdrop-blur-md shadow-xl p-6 space-y-5">
+          {/* Google (primary) */}
+          <Button
+            type="button"
+            onClick={handleGoogleSignIn}
+            disabled={isBusy}
+            className="w-full h-12 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-semibold border-0 shadow-md flex items-center justify-center gap-3"
+          >
+            {loading === 'google' ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <svg className="w-5 h-5" viewBox="0 0 24 24">
+                <path
+                  fill="#4285F4"
+                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                />
+              </svg>
+            )}
+            Continue with Google
+          </Button>
+
           <div className="relative">
-            <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 to-cyan-500/20 rounded-3xl blur-xl"></div>
-            <div className="relative bg-slate-900/80 backdrop-blur-xl border border-slate-700/50 rounded-3xl p-8 shadow-2xl">
-              {/* Back Button */}
-              <button
-                onClick={() => {
-                  setStep('role');
-                  setPhone('');
-                  setEmail('');
-                  setPassword('');
-                  setOtp('');
-                  setConfirmationResult(null);
-                }}
-                className="mb-6 flex items-center gap-2 text-slate-400 hover:text-white transition-colors"
-              >
-                <span>←</span>
-                <span className="text-sm font-medium">Back</span>
-              </button>
-
-              {/* Title */}
-              <div className="mb-8">
-                <div className="flex items-center justify-center gap-3 mb-4">
-                  {selectedRole === 'driver' ? (
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-blue-500/50">
-                      <Bus className="w-6 h-6 text-white" />
-                    </div>
-                  ) : (
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500 to-purple-500 flex items-center justify-center shadow-lg shadow-cyan-500/50">
-                      <User2 className="w-6 h-6 text-white" />
-                    </div>
-                  )}
-                </div>
-                <h2 className="text-2xl font-bold text-white text-center mb-2">
-                  {selectedRole === 'driver' ? 'Driver' : 'Passenger'} Sign In
-                </h2>
-                <p className="text-slate-400 text-center text-sm">
-                  Choose your preferred authentication method
-                </p>
-              </div>
-
-              {/* Auth Method Tabs */}
-              <div className="flex gap-3 p-1.5 bg-slate-800/50 rounded-xl mb-8 border border-slate-700/50">
-                <button
-                  onClick={() => setAuthMethod('phone')}
-                  className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-lg font-medium transition-all ${authMethod === 'phone'
-                    ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg shadow-blue-500/50'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
-                    }`}
-                >
-                  <Phone className="w-4 h-4" />
-                  <span>Phone</span>
-                </button>
-                <button
-                  onClick={() => setAuthMethod('email')}
-                  className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-lg font-medium transition-all ${authMethod === 'email'
-                    ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg shadow-blue-500/50'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
-                    }`}
-                >
-                  <Mail className="w-4 h-4" />
-                  <span>Email</span>
-                </button>
-              </div>
-
-              {/* Auth Forms */}
-              <div className="space-y-6">
-                {authMethod === 'phone' ? (
-                  <>
-                    {/* Phone Authentication */}
-                    <div className="space-y-3">
-                      <label className="text-sm font-medium text-slate-300">
-                        Phone Number (Nepal)
-                      </label>
-                      <div className="flex items-center gap-3">
-                        <div className="px-4 py-3.5 rounded-xl bg-slate-800/50 border border-slate-700/50 text-sm font-medium text-slate-300 whitespace-nowrap">
-                          +977
-                        </div>
-                        <input
-                          type="tel"
-                          placeholder="98XXXXXXXX"
-                          value={phone}
-                          onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                          className="flex-1 px-4 py-3.5 rounded-xl bg-slate-800/50 border border-slate-700/50 text-white placeholder-slate-500 focus:border-cyan-400/50 focus:ring-2 focus:ring-cyan-400/20 transition-all text-lg"
-                          maxLength={10}
-                        />
-                      </div>
-                      <p className="text-xs text-slate-500">
-                        We'll send a 6-digit verification code via SMS
-                      </p>
-                    </div>
-
-                    <button
-                      onClick={handleSendOtp}
-                      disabled={isSending || !!confirmationResult || phone.length < 8}
-                      className="w-full h-14 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-semibold shadow-lg shadow-cyan-500/50 transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center justify-center gap-2"
-                    >
-                      {isSending ? (
-                        <>
-                          <span className="animate-spin">⏳</span>
-                          <span>Sending OTP...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Phone className="w-5 h-5" />
-                          <span>Send Verification Code</span>
-                        </>
-                      )}
-                    </button>
-
-                    {/* reCAPTCHA container (invisible) */}
-                    <div id="recaptcha-container" className="h-0 w-0 overflow-hidden" />
-                  </>
-                ) : (
-                  <>
-                    {/* Email Authentication */}
-                    {/* Sign In / Sign Up Toggle */}
-                    <div className="flex gap-3 p-1 bg-slate-800/50 rounded-lg border border-slate-700/50">
-                      <button
-                        onClick={() => setIsSignUp(false)}
-                        className={`flex-1 px-4 py-2.5 rounded-md font-medium transition-all ${!isSignUp
-                          ? 'bg-slate-700 text-white'
-                          : 'text-slate-400 hover:text-white'
-                          }`}
-                      >
-                        Sign In
-                      </button>
-                      <button
-                        onClick={() => setIsSignUp(true)}
-                        className={`flex-1 px-4 py-2.5 rounded-md font-medium transition-all ${isSignUp
-                          ? 'bg-slate-700 text-white'
-                          : 'text-slate-400 hover:text-white'
-                          }`}
-                      >
-                        Sign Up
-                      </button>
-                    </div>
-
-                    <div className="space-y-3">
-                      <label className="text-sm font-medium text-slate-300">
-                        Email Address
-                      </label>
-                      <div className="relative">
-                        <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-                        <input
-                          type="email"
-                          placeholder="you@example.com"
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          className="w-full pl-12 pr-4 py-3.5 rounded-xl bg-slate-800/50 border border-slate-700/50 text-white placeholder-slate-500 focus:border-cyan-400/50 focus:ring-2 focus:ring-cyan-400/20 transition-all"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-3">
-                      <label className="text-sm font-medium text-slate-300">
-                        Password
-                      </label>
-                      <div className="relative">
-                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-                        <input
-                          type={showPassword ? 'text' : 'password'}
-                          placeholder="••••••••"
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          className="w-full pl-12 pr-12 py-3.5 rounded-xl bg-slate-800/50 border border-slate-700/50 text-white placeholder-slate-500 focus:border-cyan-400/50 focus:ring-2 focus:ring-cyan-400/20 transition-all"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
-                        >
-                          {showPassword ? (
-                            <EyeOff className="w-5 h-5" />
-                          ) : (
-                            <Eye className="w-5 h-5" />
-                          )}
-                        </button>
-                      </div>
-                      {isSignUp && (
-                        <p className="text-xs text-slate-500">
-                          Minimum 6 characters
-                        </p>
-                      )}
-                    </div>
-
-                    <button
-                      onClick={handleEmailAuth}
-                      disabled={isAuthenticating || !email || !password}
-                      className="w-full h-14 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-semibold shadow-lg shadow-cyan-500/50 transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center justify-center gap-2"
-                    >
-                      {isAuthenticating ? (
-                        <>
-                          <span className="animate-spin">⏳</span>
-                          <span>{isSignUp ? 'Creating Account...' : 'Signing In...'}</span>
-                        </>
-                      ) : (
-                        <>
-                          <Mail className="w-5 h-5" />
-                          <span>{isSignUp ? 'Create Account' : 'Sign In'}</span>
-                        </>
-                      )}
-                    </button>
-
-                    {!isSignUp && (
-                      <button
-                        type="button"
-                        onClick={handleForgotPassword}
-                        className="w-full text-sm text-cyan-400 hover:text-cyan-300 transition-colors"
-                      >
-                        Forgot Password?
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t border-slate-700/60" />
+            </div>
+            <div className="relative flex justify-center text-xs">
+              <span className="bg-slate-900/70 px-3 text-slate-500">or with email</span>
             </div>
           </div>
-        )}
 
-        <p className="text-xs text-center text-slate-500 max-w-md mx-auto">
-          {authMethod === 'phone'
-            ? 'By continuing, you agree to receive an SMS for verification. Standard SMS charges may apply.'
-            : 'By continuing, you agree to our Terms of Service and Privacy Policy.'}
+          {/* Email / Password (secondary) */}
+          <div className="flex gap-2 p-1 rounded-xl bg-slate-800/50 border border-slate-700/50">
+            <button
+              type="button"
+              onClick={() => setIsSignUp(false)}
+              className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                !isSignUp ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Sign in
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsSignUp(true)}
+              className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                isSignUp ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Sign up
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            <div className="relative">
+              <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+              <Input
+                type="email"
+                placeholder=" Email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="h-12 pl-10 rounded-xl bg-slate-800/70 border-slate-700 text-white placeholder:text-slate-500 focus:border-emerald-500/50 focus:ring-emerald-500/20"
+              />
+            </div>
+            <div className="relative">
+              <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+              <Input
+                type={showPassword ? 'text' : 'password'}
+                placeholder=" Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="h-12 pl-10 pr-10 rounded-xl bg-slate-800/70 border-slate-700 text-white placeholder:text-slate-500 focus:border-emerald-500/50 focus:ring-emerald-500/20"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <Button
+            type="button"
+            onClick={handleEmailAuth}
+            disabled={isBusy || !email || !password}
+            className="w-full h-12 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white font-semibold shadow-lg shadow-emerald-500/25 disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {loading === 'email' ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Mail className="w-4 h-4" />
+            )}
+            {isSignUp ? 'Create account' : 'Sign in with email'}
+          </Button>
+
+          {!isSignUp && (
+            <button
+              type="button"
+              onClick={handleForgotPassword}
+              className="w-full text-sm text-cyan-400 hover:text-cyan-300 transition-colors"
+            >
+              Forgot password?
+            </button>
+          )}
+        </div>
+
+        <p className="text-center text-xs text-slate-500">
+          By continuing, you agree to Yatra’s Terms of Service and Privacy Policy.
         </p>
       </div>
-
-      {/* OTP Dialog */}
-      <Dialog open={otpOpen} onOpenChange={setOtpOpen}>
-        <DialogContent className="max-w-sm bg-slate-900 border-slate-700 text-white">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-bold text-white">Enter Verification Code</DialogTitle>
-            <DialogDescription className="text-slate-400">
-              We've sent a 6-digit code to{' '}
-              <span className="font-medium text-cyan-400">{fullPhone}</span>
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 mt-4">
-            <input
-              type="text"
-              inputMode="numeric"
-              maxLength={6}
-              placeholder="000000"
-              value={otp}
-              onChange={(e) => handleOtpChange(e.target.value)}
-              className="w-full text-center tracking-[0.5em] text-3xl font-mono h-16 rounded-xl bg-slate-800/50 border border-slate-700/50 text-white placeholder-slate-600 focus:border-cyan-400/50 focus:ring-2 focus:ring-cyan-400/20 transition-all"
-              autoFocus
-            />
-            <button
-              onClick={() => handleVerifyOtp()}
-              disabled={isVerifying || otp.length !== 6}
-              className="w-full h-14 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-semibold shadow-lg shadow-cyan-500/50 transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-            >
-              {isVerifying ? (
-                <>
-                  <span className="animate-spin mr-2">⏳</span>
-                  Verifying...
-                </>
-              ) : (
-                'Verify & Continue'
-              )}
-            </button>
-            <button
-              onClick={() => {
-                setOtpOpen(false);
-                setOtp('');
-                setConfirmationResult(null);
-              }}
-              className="w-full h-12 rounded-xl bg-slate-800/50 border border-slate-700/50 text-slate-300 hover:text-white hover:bg-slate-700/50 transition-all"
-            >
-              Cancel
-            </button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
 
 export default function AuthPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="animate-spin text-cyan-500 text-4xl">⏳</div>
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+          <Loader2 className="w-10 h-10 animate-spin text-emerald-500" />
+        </div>
+      }
+    >
       <AuthContent />
     </Suspense>
   );

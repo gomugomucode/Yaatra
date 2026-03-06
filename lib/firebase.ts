@@ -8,6 +8,8 @@ import {
   signInWithEmailAndPassword as firebaseSignInWithEmail,
   createUserWithEmailAndPassword as firebaseCreateUserWithEmail,
   sendPasswordResetEmail as firebaseSendPasswordReset,
+  signInWithPopup,
+  GoogleAuthProvider,
   type UserCredential,
 } from 'firebase/auth';
 // Client-side Firebase
@@ -125,4 +127,11 @@ export const createUserWithEmail = async (
 export const sendPasswordReset = async (email: string): Promise<void> => {
   const auth = getFirebaseAuth();
   return await firebaseSendPasswordReset(auth, email);
+};
+
+// Google Sign-In
+export const signInWithGoogle = async (): Promise<UserCredential> => {
+  const auth = getFirebaseAuth();
+  const provider = new GoogleAuthProvider();
+  return await signInWithPopup(auth, provider);
 };
