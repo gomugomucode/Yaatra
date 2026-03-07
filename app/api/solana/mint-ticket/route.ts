@@ -1,62 +1,80 @@
 import { NextResponse } from 'next/server';
-import { getConnection, getServerKeypair } from '@/lib/solana/connection';
+import { Connection, Keypair } from '@solana/web3.js';
+import bs58 from 'bs58';
 import { mintTripTicketNFT, TripTicketMetadata } from '@/lib/solana/tripTicket';
-import { getAdminDb } from '@/lib/firebaseAdmin';
-
-// Important: Next.js API Routes need this to avoid timeout on Devnet
-export const maxDuration = 60;
+import { getDb } from '@/lib/firebaseDb';
+import { ref, update } from 'firebase/database';
 
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const { passengerId, passengerWallet, bookingId, fare, route, driverName } = body;
+        const { bookingId, passengerId, passengerWallet, fare, route, driverName } = body;
 
-        if (!passengerId || !passengerWallet || !bookingId) {
-            return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
+        if (!bookingId || !passengerWallet || !fare || !route || !driverName) {
+            return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
         }
 
-        console.log(`🎟️ [Trip Ticket] Starting mint for booking ${bookingId}`);
+        const privateKeyString = process.env.SOLANA_SERVER_KEY;
+        if (!privateKeyString) {
+            console.error('[MINT] SOLANA_SERVER_KEY is not defined in env variables');
+            return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
+        }
 
-        const connection = getConnection();
-        const serverKeypair = getServerKeypair();
+        // Decode base58 private key
+        let serverKeypair: Keypair;
+        try {
+            serverKeypair = Keypair.fromSecretKey(bs58.decode(privateKeyString));
+        } catch (e) {
+            console.error('[MINT] Failed to parse SOLANA_SERVER_KEY:', e);
+            return NextResponse.json({ error: 'Server key formulation error' }, { status: 500 });
+        }
+
+        // Init connection to Solana Devnet
+        const connection = new Connection('https://api.devnet.solana.com', 'confirmed');
 
         const metadataDetails: TripTicketMetadata = {
             tripId: bookingId,
-            route: route || 'Unknown Route',
-            fare: fare?.toString() || '0',
-            driverName: driverName || 'Yatra Driver',
+            route,
+            fare: String(fare),
+            driverName,
             tripDate: new Date().toISOString(),
         };
 
-        const mintResult = await mintTripTicketNFT(
+        // Execute the Mint
+        const receipt = await mintTripTicketNFT(
             connection,
             serverKeypair,
             passengerWallet,
             metadataDetails
         );
 
-        console.log(`✅ [Trip Ticket] Minted to ${passengerWallet}`);
+        // Update Firebase bookings record
+        // In Yatra, ride requests/bookings are stored in `bookings/{passengerId}/` or maybe `trips/{bookingId}`
+        // Let's update `trips/{bookingId}` or `bookings/{passengerId}/{bookingId}`
+        // Usually, the app writes to `bookings/{userId}/{bookingId}`.
+        const db = getDb();
+        const passengerIdToUse = passengerId || bookingId;
 
-        // Update Firebase with Mint Result using Admin SDK
-        const adminDb = getAdminDb();
-        const bookingRef = adminDb.ref(`bookings/${bookingId}`);
+        // Both `bookings` and `trips` might need it. The UI (YatraProfileDrawer) binds to `bookings/{uid}/{passenger-role}`.
+        // wait, `subscribeToBookings(currentUser.uid, 'passenger')` queries `bookings/{passengerId}`.
+        // So we definitely must update `bookings/${passengerIdToUse}/${bookingId}`.
 
-        await bookingRef.update({
+        const bookingRef = ref(db, `bookings/${passengerIdToUse}/${bookingId}`);
+
+        await update(bookingRef, {
             receipt: {
-                mintAddress: mintResult.mintAddress,
-                txSignature: mintResult.signature,
-                explorerLink: mintResult.explorerLink,
                 status: 'minted',
-                mintedAt: new Date().toISOString()
+                txSignature: receipt.signature,
+                mintAddress: receipt.mintAddress,
+                explorerLink: receipt.explorerLink,
             }
         });
 
-        console.log(`🔥 [Firebase] Updated booking ${bookingId} with receipt`);
+        console.log(`[MINT] Successfully minted NFT ${receipt.mintAddress} for booking ${bookingId}`);
 
-        return NextResponse.json({ success: true, receipt: mintResult });
-
+        return NextResponse.json({ success: true, receipt });
     } catch (error: any) {
-        console.error('❌ [Trip Ticket] API Error:', error.message);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        console.error('[MINT] Final Error:', error);
+        return NextResponse.json({ error: error.message || 'Unknown error' }, { status: 500 });
     }
 }

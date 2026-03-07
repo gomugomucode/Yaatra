@@ -22,7 +22,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { getFirebaseAuth, getFirebaseApp } from '@/lib/firebase';
 import { createUserProfile } from '@/lib/firebaseDb';
 import { VEHICLE_TYPES, DEFAULT_LOCATION } from '@/lib/constants';
-import { VehicleTypeId } from '@/lib/types';
+import { VehicleTypeId, checkProfileCompletion } from '@/lib/types';
 import { getDatabase, ref, set as rtdbSet } from 'firebase/database';
 import { YatraOnboardingWizard } from '@/components/onboarding/YatraOnboardingWizard';
 
@@ -90,64 +90,36 @@ const resizeImage = (file: File): Promise<string> => {
 function ProfilePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { currentUser, role, userData, setRole } = useAuth();
+  const { currentUser, role, userData, loading, setRole } = useAuth();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [profilePreview, setProfilePreview] = useState<string | null>(null);
   const [vehiclePreview, setVehiclePreview] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(1);
-  const [hasRedirected, setHasRedirected] = useState(false);
-  const [showOnboarding, setShowOnboarding] = useState(true);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
-  // Get role from URL params as fallback (for phone auth flow)
+  // Get role from URL params — URL param is ground truth (set by landing page).
+  // Context `role` may lag behind session creation so we prioritize URL first.
   const roleFromUrl = searchParams.get('role') as 'driver' | 'passenger' | null;
-  const effectiveRole = role || roleFromUrl;
+  const effectiveRole = roleFromUrl || role;
 
-  // Ensure role is set from URL if not in context
+  // ── Hook 1: Sync role from URL into context ──
   useEffect(() => {
     if (currentUser && !role && roleFromUrl && (roleFromUrl === 'driver' || roleFromUrl === 'passenger')) {
       setRole(roleFromUrl);
     }
   }, [currentUser, role, roleFromUrl, setRole]);
 
-  // Helper to check if profile is complete based on role
-  const isProfileComplete = (data: any) => {
-    if (!data) return false;
-    if (data.role === 'driver') {
-      return !!(data.name && data.vehicleNumber && data.licenseNumber && data.route);
-    }
-    if (data.role === 'passenger') {
-      return !!(data.name);
-    }
-    return false;
-  };
-
+  // ── Hook 2: Safe redirect guard ──
+  // Fires AFTER auth is fully loaded. Uses window.location.assign for a hard
+  // navigation that clears all stale React state — prevents redirect loops.
   useEffect(() => {
-    if (!currentUser) {
-      router.push('/auth');
-      return;
+    if (!loading && currentUser && userData && !isSubmitting) {
+      if (checkProfileCompletion(userData)) {
+        window.location.assign(userData.role === 'driver' ? '/driver' : '/passenger');
+      }
     }
-
-    // If user already has a profile with a different role, redirect to correct dashboard
-    if (userData && userData.role && userData.role !== effectiveRole) {
-      toast({
-        title: 'Role mismatch',
-        description: `Your account is registered as ${userData.role}. Redirecting...`,
-        variant: 'destructive',
-      });
-      router.replace(userData.role === 'driver' ? '/driver' : '/passenger');
-      return;
-    }
-
-    // Only redirect if profile exists AND IS COMPLETE AND we haven't already redirected from form submission
-    // AND we're not currently on step 1 (which means user just arrived)
-    if (userData && isProfileComplete(userData) && !hasRedirected && !isSubmitting && currentStep !== 1) {
-      setHasRedirected(true);
-      const targetRole = userData.role || effectiveRole || role;
-      router.replace(targetRole === 'driver' ? '/driver' : '/passenger');
-    }
-  }, [currentUser, userData, role, effectiveRole, router, hasRedirected, isSubmitting, currentStep, toast]);
-
+  }, [currentUser, userData, loading, isSubmitting]);
   const driverForm = useForm<DriverFormData>({
     resolver: zodResolver(driverSchema),
     defaultValues: {
@@ -203,35 +175,16 @@ function ProfilePageContent() {
   };
 
   const handleDriverSubmit = async (data: DriverFormData) => {
-    if (!currentUser) {
-      toast({
-        variant: 'destructive',
-        title: 'Not authenticated',
-        description: 'Please sign in to continue.',
-      });
-      router.push('/auth');
-      return;
-    }
-
-    // Ensure user is actually a driver
-    if (effectiveRole !== 'driver' && role !== 'driver') {
-      toast({
-        variant: 'destructive',
-        title: 'Invalid role',
-        description: 'This form is for drivers only. Please sign up as a driver.',
-      });
-      router.push('/auth?role=driver');
-      return;
-    }
+    if (!currentUser) return;
 
     try {
       setIsSubmitting(true);
-
       const vehicleTypeData = VEHICLE_TYPES.find((v) => v.id === data.vehicleType);
       const capacity = vehicleTypeData?.capacity || data.capacity;
 
-      const idToken = await currentUser.getIdToken();
-      // 1. Call the backend API so it can set up the DB as an Admin (bypassing client rules)
+      // 1. Get initial token for registration
+      let idToken = await currentUser.getIdToken();
+
       const registerRes = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -251,195 +204,112 @@ function ProfilePageContent() {
         }),
       });
 
-      if (!registerRes.ok) {
-        throw new Error('Registration API failed');
-      }
+      if (!registerRes.ok) throw new Error('Registration API failed');
 
-      // Ensure role is set in context before creating session
-      setRole('driver');
+      // 2. CRITICAL: Refresh token BEFORE session login to avoid 400 Expired error
+      // especially if registration took a long time to compile.
+      const freshToken = await currentUser.getIdToken(true);
 
-      // 2. Create session cookie and wait for it to be set
       const sessionResponse = await fetch('/api/sessionLogin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken, role: 'driver' }),
+        body: JSON.stringify({ idToken: freshToken, role: 'driver' }),
       });
 
-      if (!sessionResponse.ok) {
-        throw new Error('Failed to create session');
-      }
+      if (!sessionResponse.ok) throw new Error('Failed to create session');
 
-      // Wait a bit to ensure cookie is set
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // 3. Update local state
+      setRole('driver');
 
-      // 3. (Optional) Create bus profile & user profile via client AFTER claims are set
-      try {
-        await createUserProfile(currentUser.uid, {
-          phone: currentUser.phoneNumber || '',
-          name: data.name,
-          role: 'driver',
-          vehicleType: data.vehicleType,
-          vehicleNumber: data.vehicleNumber,
-          route: data.route,
-          capacity,
-          licenseNumber: data.licenseNumber,
-          profileImage: data.profileImage || null,
-          vehicleImage: data.vehicleImage || null,
-          isApproved: false,
-        });
-
-        const app = getFirebaseApp();
-        const rtdb = getDatabase(app);
-        const busId = currentUser.uid;
-        const busRef = ref(rtdb, `buses/${busId}`);
-        const nowIso = new Date().toISOString();
-        const vehicleMeta = VEHICLE_TYPES.find((v) => v.id === data.vehicleType);
-
-        await rtdbSet(busRef, {
-          id: busId,
-          driverName: data.name,
-          driverImage: data.profileImage || null,
-          vehicleImage: data.vehicleImage || null,
-          busNumber: data.vehicleNumber,
-          route: data.route,
-          currentLocation: {
-            lat: DEFAULT_LOCATION.lat,
-            lng: DEFAULT_LOCATION.lng,
-            address: 'Starting point',
-            timestamp: nowIso,
-          },
-          destination: {
-            lat: DEFAULT_LOCATION.lat,
-            lng: DEFAULT_LOCATION.lng,
-            address: 'Destination not set',
-            timestamp: nowIso,
-          },
-          passengers: [],
-          capacity,
-          isActive: false,
-          emoji: vehicleMeta?.icon || '🚌',
-          vehicleType: data.vehicleType,
-          onlineBookedSeats: 0,
-          offlineOccupiedSeats: 0,
-          availableSeats: capacity,
-          lastSeatUpdate: nowIso,
-        });
-      } catch (err) {
-        console.warn('Bus RTDB initialized by backend or failed:', err);
-      }
-
-      toast({
-        title: 'Profile created!',
-        description: 'Your driver profile has been set up successfully.',
+      // 4. NOW write to DB (Client now has 'driver' claims via the freshToken)
+      await createUserProfile(currentUser.uid, {
+        phone: currentUser.phoneNumber || '',
+        name: data.name,
+        role: 'driver',
+        vehicleType: data.vehicleType,
+        vehicleNumber: data.vehicleNumber,
+        route: data.route,
+        capacity,
+        licenseNumber: data.licenseNumber,
+        profileImage: data.profileImage || null,
+        vehicleImage: data.vehicleImage || null,
+        isApproved: false,
       });
 
-      setHasRedirected(true);
-      // Force a hard navigation to ensure middleware picks up the new cookie
-      window.location.href = '/driver';
+      const app = getFirebaseApp();
+      const rtdb = getDatabase(app);
+      const busRef = ref(rtdb, `buses/${currentUser.uid}`);
+      const nowIso = new Date().toISOString();
+
+      await rtdbSet(busRef, {
+        id: currentUser.uid,
+        driverName: data.name,
+        busNumber: data.vehicleNumber,
+        route: data.route,
+        capacity,
+        isActive: false,
+        vehicleType: data.vehicleType,
+        availableSeats: capacity,
+        lastSeatUpdate: nowIso,
+        currentLocation: { lat: DEFAULT_LOCATION.lat, lng: DEFAULT_LOCATION.lng, address: 'Starting...', timestamp: nowIso }
+      });
+
+      toast({ title: 'Success!', description: 'Profile created.' });
+      window.location.assign('/driver'); // Hard redirect to clear any state lag
     } catch (error) {
-      console.error('Error creating profile:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to create profile. Please try again.',
-      });
+      console.error('Error:', error);
+      toast({ variant: 'destructive', title: 'Error', description: 'Failed to create profile.' });
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handlePassengerSubmit = async (data: PassengerFormData) => {
-    if (!currentUser) {
-      toast({
-        variant: 'destructive',
-        title: 'Not authenticated',
-        description: 'Please sign in to continue.',
-      });
-      router.push('/auth');
-      return;
-    }
-
-    // Ensure user is actually a passenger
-    if (effectiveRole !== 'passenger' && role !== 'passenger') {
-      toast({
-        variant: 'destructive',
-        title: 'Invalid role',
-        description: 'This form is for passengers only. Please sign up as a passenger.',
-      });
-      router.push('/auth?role=passenger');
-      return;
-    }
+    if (!currentUser) return;
 
     try {
       setIsSubmitting(true);
-
       const idToken = await currentUser.getIdToken();
+
       const registerRes = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           idToken,
           role: 'passenger',
-          userData: {
-            name: data.name,
-            email: data.email,
-            emergencyContact: data.emergencyContact,
-            solanaWallet: data.solanaWallet,
-          },
+          userData: { name: data.name, email: data.email, emergencyContact: data.emergencyContact, solanaWallet: data.solanaWallet }
         }),
       });
 
-      // Ensure role is set in context before creating session
-      setRole('passenger');
+      // Refresh token to get 'passenger' claim
+      const freshToken = await currentUser.getIdToken(true);
 
-      // Create session cookie and wait for it to be set
-      const sessionResponse = await fetch('/api/sessionLogin', {
+      await fetch('/api/sessionLogin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken, role: 'passenger' }),
+        body: JSON.stringify({ idToken: freshToken, role: 'passenger' }),
       });
 
-      if (!sessionResponse.ok) {
-        throw new Error('Failed to create session');
-      }
+      setRole('passenger');
 
-      // Wait a bit to ensure cookie is set
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      // 3. (Optional) Create user profile via client AFTER claims are set
-      try {
-        await createUserProfile(currentUser.uid, {
-          phone: currentUser.phoneNumber || '',
-          name: data.name,
-          email: data.email || null,
-          role: 'passenger',
-          emergencyContact: data.emergencyContact || null,
-          solanaWallet: data.solanaWallet || null,
-        });
-      } catch (err) {
-        console.warn('Passenger RTDB initialized by backend or failed:', err);
-      }
-
-      toast({
-        title: 'Profile created!',
-        description: 'Your passenger profile has been set up successfully.',
+      await createUserProfile(currentUser.uid, {
+        phone: currentUser.phoneNumber || '',
+        name: data.name,
+        email: data.email || null,
+        role: 'passenger',
+        emergencyContact: data.emergencyContact || null,
+        solanaWallet: data.solanaWallet || null,
       });
 
-      setHasRedirected(true);
-      // Force a hard navigation to ensure middleware picks up the new cookie
-      window.location.href = '/passenger';
+      toast({ title: 'Success!', description: 'Profile created.' });
+      window.location.assign('/passenger');
     } catch (error) {
-      console.error('Error creating profile:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to create profile. Please try again.',
-      });
+      console.error('Error:', error);
+      toast({ variant: 'destructive', title: 'Error', description: 'Failed to create profile.' });
     } finally {
       setIsSubmitting(false);
     }
   };
-
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-slate-950 flex items-center justify-center">
@@ -451,13 +321,9 @@ function ProfilePageContent() {
     );
   }
 
-  // If no role is set, redirect to auth page with role selection
+  // No role — user arrived at /auth/profile without going through the landing page.
+  // Just send them back to pick a role. No toast in the render path.
   if (!effectiveRole || (effectiveRole !== 'driver' && effectiveRole !== 'passenger')) {
-    toast({
-      variant: 'destructive',
-      title: 'Role not set',
-      description: 'Please select your role to continue.',
-    });
     router.push('/auth');
     return null;
   }

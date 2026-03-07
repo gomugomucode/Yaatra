@@ -66,12 +66,16 @@ export function YatraProfileDrawer({ open: controlledOpen, onOpenChange }: Yatra
 
   useEffect(() => {
     if (!currentUser || !open) return;
+    // Inside useEffect for subscribeToBookings
     const unsubscribe = subscribeToBookings(currentUser.uid, 'passenger', (data) => {
-      const withReceipts = data.filter((b) => b.receipt?.status === 'minted');
+      // 1. Filter only for rides that have an NFT minted
+      const withReceipts = data.filter((b) => b.receipt && b.receipt.status === 'minted');
+
+      // 2. Sort by newest first
       const sorted = [...withReceipts].sort(
         (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
       );
-      setBookingsWithReceipts(sorted.slice(0, 20));
+      setBookingsWithReceipts(sorted);
     });
     return () => unsubscribe();
   }, [currentUser, open]);
@@ -213,16 +217,53 @@ export function YatraProfileDrawer({ open: controlledOpen, onOpenChange }: Yatra
           <div className="p-6 flex-1 bg-[#0b0f1a]">
             <nav className="space-y-2">
               {[
-                { label: 'Trip History', icon: History },
-                { label: 'Payment Receipts', icon: Receipt },
-                { label: 'Refer & Earn', icon: Gift },
-                { label: 'Help Center', icon: HelpCircle },
+                {
+                  label: 'Trip History',
+                  icon: History,
+                  // Shows all completed rides, not just NFTs
+                  onClick: () => {
+                    const historyText = bookingsWithReceipts.length > 0
+                      ? `You have ${bookingsWithReceipts.length} completed trips.`
+                      : "No trip history found yet.";
+                    toast({ title: "Trip History", description: historyText });
+                    // Logic: You can use setView('history') here if you build a sub-view
+                  }
+                },
+                {
+                  label: 'Payment Receipts',
+                  icon: Receipt,
+                  // Opens the latest minted NFT on Solscan
+                  onClick: () => {
+                    const latest = bookingsWithReceipts[0];
+                    if (latest?.receipt?.explorerLink) {
+                      window.open(latest.receipt.explorerLink, '_blank');
+                    } else {
+                      toast({ title: "No Receipts", description: "Complete a ride to see blockchain receipts." });
+                    }
+                  }
+                },
+                {
+                  label: 'Refer & Earn',
+                  icon: Gift,
+                  // Copies a real referral link using the User's UID
+                  onClick: () => {
+                    const refCode = currentUser?.uid.slice(0, 6).toUpperCase();
+                    navigator.clipboard.writeText(`Join Yatra with my code: ${refCode}`);
+                    toast({ title: "Referral Copied!", description: `Share code ${refCode} with friends.` });
+                  }
+                },
+                {
+                  label: 'Help Center',
+                  icon: HelpCircle,
+                  onClick: () => window.open('https://yatra-support.com', '_blank')
+                },
               ].map((item) => (
                 <button
                   key={item.label}
-                  className="w-full flex items-center gap-4 px-4 py-3 rounded-xl text-sm font-medium text-slate-300 hover:bg-slate-800/50 hover:text-white transition-all"
+                  onClick={item.onClick}
+                  className="w-full flex items-center gap-4 px-4 py-3 rounded-xl text-sm font-medium text-slate-300 hover:bg-slate-800/50 hover:text-white transition-all group"
                 >
-                  <item.icon className="w-4 h-4 text-slate-500" />
+                  <item.icon className="w-4 h-4 text-slate-500 group-hover:text-cyan-400 transition-colors" />
                   {item.label}
                 </button>
               ))}

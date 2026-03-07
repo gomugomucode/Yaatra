@@ -2,7 +2,7 @@ import { getDatabase, ref, set, update, onValue, push, get, onDisconnect } from 
 import { getFirebaseApp } from './firebase';
 import { Bus, Booking, Location, LiveUser } from './types';
 
-const getDb = () => getDatabase(getFirebaseApp());
+export const getDb = () => getDatabase(getFirebaseApp());
 const getActiveDriverRef = (driverId: string) => ref(getDb(), `drivers/active/${driverId}`);
 
 // --- Bus Functions ---

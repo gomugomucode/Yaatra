@@ -16,6 +16,7 @@ import {
   signInWithGoogle,
 } from '@/lib/firebase';
 import { getUserProfile } from '@/lib/firebaseDb';
+import { checkProfileCompletion } from '@/lib/types';
 
 type Role = 'driver' | 'passenger';
 
@@ -49,16 +50,7 @@ const mapFirebaseError = (err: unknown): string => {
   return 'Something went wrong. Please try again.';
 };
 
-const isProfileComplete = (data: any): boolean => {
-  if (!data) return false;
-  if (data.role === 'driver') {
-    return !!(data.name && data.vehicleNumber && data.licenseNumber && data.route);
-  }
-  if (data.role === 'passenger') {
-    return !!(data.name);
-  }
-  return false;
-};
+
 
 /** After Firebase login: if user exists in Realtime DB users/{uid} and profile complete → dashboard; else → profile. */
 async function resolvePostLoginRedirect(
@@ -75,7 +67,7 @@ async function resolvePostLoginRedirect(
     // e.g. offline or permission; treat as new user
   }
 
-  const hasProfile = userData != null && isProfileComplete(userData);
+  const hasProfile = userData != null && checkProfileCompletion(userData);
   const role = hasProfile ? (userData.role as Role) : selectedRole;
 
   const sessionRes = await fetch('/api/sessionLogin', {
@@ -114,17 +106,30 @@ function AuthContent() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState<'idle' | 'google' | 'email'>('idle');
 
-  // If user is logged in (on auth page), check users/${uid} in Realtime Database.
-  // If data exists → redirect to /dashboard; if missing → redirect to /profile.
+  // Post-login redirect guard: fires AFTER auth is fully loaded and userData is resolved.
   useEffect(() => {
     if (authLoading || !currentUser || pathname !== '/auth') return;
-    const profilePath = role ? `/auth/profile?role=${role}` : '/auth/profile';
-    if (userData != null) {
-      router.replace('/dashboard');
-    } else {
-      router.replace(profilePath);
+
+    // userData===undefined means the subscription hasn't responded yet — wait.
+    if (userData === undefined) return;
+
+    // userData===null means no profile in DB → go create one.
+    if (userData === null) {
+      const dest = role || selectedRole;
+      router.replace(`/auth/profile?role=${dest}`);
+      return;
     }
-  }, [authLoading, currentUser, userData, role, router, pathname]);
+
+    // Profile exists — check completeness.
+    if (checkProfileCompletion(userData)) {
+      const targetRole = userData.role || role || selectedRole;
+      router.replace(targetRole === 'driver' ? '/driver' : '/passenger');
+    } else {
+      // Profile incomplete — send to finish it.
+      const dest = userData.role || role || selectedRole;
+      router.replace(`/auth/profile?role=${dest}`);
+    }
+  }, [authLoading, currentUser, userData, role, selectedRole, router, pathname]);
 
   // Sync role from URL
   useEffect(() => {
@@ -179,20 +184,11 @@ function AuthContent() {
       let userCredential;
       if (isSignUp) {
         userCredential = await createUserWithEmail(email, password);
+        // BUG FIX: Do NOT pre-create a sparse profile here.
+        // Writing name/email to DB before checkProfileCompletion runs would
+        // fool the guard into thinking the profile is complete and skip setup.
+        // Instead, just get the token and let resolvePostLoginRedirect decide.
         const idToken = await userCredential.user.getIdToken();
-        try {
-          await fetch('/api/auth/register', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              idToken,
-              role: selectedRole,
-              userData: { email, phone: '', name: email.split('@')[0] },
-            }),
-          });
-        } catch {
-          // non-blocking
-        }
         await resolvePostLoginRedirect(
           userCredential.user.uid,
           selectedRole,
@@ -221,11 +217,25 @@ function AuthContent() {
       }
     } catch (err: unknown) {
       console.error(err);
-      toast({
-        variant: 'destructive',
-        title: isSignUp ? 'Sign up failed' : 'Sign in failed',
-        description: mapFirebaseError(err),
-      });
+      // BUG FIX: If sign-up fails because the email already exists, auto-switch
+      // to sign-in mode instead of leaving the user stuck at an error.
+      if (
+        isSignUp &&
+        err instanceof FirebaseError &&
+        err.code === 'auth/email-already-in-use'
+      ) {
+        setIsSignUp(false);
+        toast({
+          title: 'Account already exists',
+          description: 'Switching to sign in — enter your password below.',
+        });
+      } else {
+        toast({
+          variant: 'destructive',
+          title: isSignUp ? 'Sign up failed' : 'Sign in failed',
+          description: mapFirebaseError(err),
+        });
+      }
     } finally {
       setLoading('idle');
     }
@@ -284,39 +294,53 @@ function AuthContent() {
           </p>
         </div>
 
-        {/* Role tabs */}
-        <div className="flex p-1 rounded-2xl bg-slate-900/60 border border-slate-700/60 backdrop-blur-md">
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedRole('passenger');
-              setRoleInUrl('passenger');
-            }}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all ${
-              selectedRole === 'passenger'
-                ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white shadow-lg shadow-emerald-500/25'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <User2 className="w-4 h-4" />
-            Passenger
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedRole('driver');
-              setRoleInUrl('driver');
-            }}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all ${
-              selectedRole === 'driver'
-                ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white shadow-lg shadow-emerald-500/25'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Bus className="w-4 h-4" />
-            Driver
-          </button>
-        </div>
+        {/* Role indicator / tabs
+            - If role is locked from landing page (?role=driver/passenger), show a
+              read-only badge so the user knows which role they're signing in as.
+            - Only show the switchable tabs when no role is locked. */}
+        {selectedRole && searchParams.get('role') ? (
+          // Locked badge — role came from landing page, don't let user change it here
+          <div className="flex items-center justify-center gap-3 py-3 rounded-2xl bg-slate-900/60 border border-slate-700/60 backdrop-blur-md">
+            {selectedRole === 'driver' ? (
+              <Bus className="w-4 h-4 text-emerald-400" />
+            ) : (
+              <User2 className="w-4 h-4 text-emerald-400" />
+            )}
+            <span className="text-sm font-semibold text-white capitalize">
+              Signing in as <span className="text-emerald-400">{selectedRole}</span>
+            </span>
+            <a
+              href="/"
+              className="ml-2 text-xs text-slate-500 hover:text-slate-300 underline underline-offset-2 transition-colors"
+            >
+              Change
+            </a>
+          </div>
+        ) : (
+          // Switchable tabs — user arrived directly at /auth without a role
+          <div className="flex p-1 rounded-2xl bg-slate-900/60 border border-slate-700/60 backdrop-blur-md">
+            <button
+              type="button"
+              onClick={() => { setSelectedRole('passenger'); setRoleInUrl('passenger'); }}
+              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all ${selectedRole === 'passenger'
+                  ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white shadow-lg shadow-emerald-500/25'
+                  : 'text-slate-400 hover:text-slate-200'
+                }`}
+            >
+              <User2 className="w-4 h-4" /> Passenger
+            </button>
+            <button
+              type="button"
+              onClick={() => { setSelectedRole('driver'); setRoleInUrl('driver'); }}
+              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all ${selectedRole === 'driver'
+                  ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white shadow-lg shadow-emerald-500/25'
+                  : 'text-slate-400 hover:text-slate-200'
+                }`}
+            >
+              <Bus className="w-4 h-4" /> Driver
+            </button>
+          </div>
+        )}
 
         {/* Card */}
         <div className="rounded-2xl border border-slate-700/60 bg-slate-900/70 backdrop-blur-md shadow-xl p-6 space-y-5">
@@ -366,18 +390,16 @@ function AuthContent() {
             <button
               type="button"
               onClick={() => setIsSignUp(false)}
-              className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                !isSignUp ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'
-              }`}
+              className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${!isSignUp ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'
+                }`}
             >
               Sign in
             </button>
             <button
               type="button"
               onClick={() => setIsSignUp(true)}
-              className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                isSignUp ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'
-              }`}
+              className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${isSignUp ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'
+                }`}
             >
               Sign up
             </button>
@@ -388,7 +410,7 @@ function AuthContent() {
               <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
               <Input
                 type="email"
-                placeholder=" Email"
+                placeholder="Email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="h-12 pl-10 rounded-xl bg-slate-800/70 border-slate-700 text-white placeholder:text-slate-500 focus:border-emerald-500/50 focus:ring-emerald-500/20"
@@ -398,7 +420,7 @@ function AuthContent() {
               <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
               <Input
                 type={showPassword ? 'text' : 'password'}
-                placeholder=" Password"
+                placeholder="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="h-12 pl-10 pr-10 rounded-xl bg-slate-800/70 border-slate-700 text-white placeholder:text-slate-500 focus:border-emerald-500/50 focus:ring-emerald-500/20"

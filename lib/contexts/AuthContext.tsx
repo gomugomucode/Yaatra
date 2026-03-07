@@ -59,6 +59,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }, 5000);
 
         try {
+          // Force-refresh the token so any custom claims set by the server
+          // (e.g. role: 'driver') are included before we read from the DB.
+          // This prevents the 'messy' dashboard flash where userData is
+          // loaded with stale permissions.
+          await user.getIdToken(true);
+
           // Subscribe to user data from Realtime Database
           // This ensures we get updates immediately when profile is created
           profileUnsubscribe = subscribeToUserProfile(user.uid, (data) => {

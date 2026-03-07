@@ -823,32 +823,28 @@ export default function PassengerDashboard() {
 
           {/* Right section - Actions */}
           <div className="flex items-center gap-3 relative z-[100] pointer-events-auto">
-
             <DetailedBookingModal />
 
-            {/* FIXED AVATAR BUTTON */}
+            {/* STABLE AVATAR LOGIC */}
             <Button
               variant="outline"
               size="icon"
-              className="relative z-[101] w-10 h-10 rounded-full bg-slate-900 border-2 border-cyan-500/50 hover:border-cyan-400 hover:bg-slate-800 shadow-[0_0_15px_rgba(34,211,238,0.3)] transition-all duration-300"
-              onClick={() => {
-                console.log("Drawer Triggered!");
-                setIsDrawerOpen(true);
-              }}
+              className="w-10 h-10 rounded-full bg-slate-900 border-2 border-cyan-500/50 shadow-[0_0_15px_rgba(34,211,238,0.3)]"
+              onClick={() => setIsDrawerOpen(true)}
             >
+              {/* Check if userData and the initial exist. 
+       If it's still loading, show a loading spinner or the 'Y' anyway 
+       instead of jumping to the logout door.
+    */}
               {userData?.name ? (
                 <span className="text-sm font-black text-cyan-400">
                   {userData.name[0].toUpperCase()}
                 </span>
               ) : (
-                <UserCircle className="w-6 h-6 text-cyan-400" />
+                <div className="h-4 w-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
               )}
-
-              {/* Small green "Online" dot to make it look pro */}
-              <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-slate-900 rounded-full shadow-sm"></span>
             </Button>
 
-            {/* THE DRAWER (Ensure this is outside the button) */}
             <YatraProfileDrawer
               open={isDrawerOpen}
               onOpenChange={setIsDrawerOpen}

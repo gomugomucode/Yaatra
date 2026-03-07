@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Bus, Passenger, Driver } from '@/lib/types';
+import { Bus, Passenger, Driver, checkProfileCompletion } from '@/lib/types';
 import MapWrapper from '@/components/map/MapWrapper';
 import {
   Navigation,
@@ -66,6 +66,7 @@ export default function DriverDashboard() {
   const [currentSpeed, setCurrentSpeed] = useState(0);
   const [activeTripRequest, setActiveTripRequest] = useState<{ id: string; lat: number; lng: number; status: string } | null>(null);
   const [showPassengerReachedAlert, setShowPassengerReachedAlert] = useState(false);
+  const [showZKPanel, setShowZKPanel] = useState(false);
   const driverWalletAddress =
     typeof userData?.solanaWallet === 'string' ? userData.solanaWallet.trim() : '';
   const lastKnownLocationRef = useRef<{ lat: number; lng: number; heading?: number; speed?: number } | null>(null);
@@ -598,37 +599,64 @@ export default function DriverDashboard() {
         description: 'Generating Soulbound Trip Ticket for passenger.',
       });
 
-      // Firebase lookup for passenger's Solana wallet
       const { getDatabase, ref, get } = await import('firebase/database');
       const { getFirebaseApp } = await import('@/lib/firebase');
       const db = getDatabase(getFirebaseApp());
-      const passengerRef = ref(db, `users/${passengerId}`);
+
+      // The `passengerId` argument here is actually the booking ID coming from the UI List
+      const bookingId = passengerId;
+
+      // We need to find the `bookings/*/bookingId` to get the true passengerId 
+      // Actually, since bookings are stored under `bookings/{passengerId}/{bookingId}` or `bookings/{busId}/{bookingId}`,
+      // Yatra's `subscribeToBookings` fetches all `bookings` and filters. Let's fetch `bookings` root and find it.
+      const bookingsRef = ref(db, 'bookings');
+      const bookingsSnap = await get(bookingsRef);
+
+      let truePassengerId: string | null = null;
+      let actualFare = 75;
+
+      if (bookingsSnap.exists()) {
+        const allBookingsData = bookingsSnap.val();
+        // Since Yatra bookings might be stored as flat objects or under child keys, we iterate
+        for (const [key, bData] of Object.entries(allBookingsData as Record<string, any>)) {
+          if (bData.id === bookingId || key === bookingId) {
+            truePassengerId = bData.passengerId;
+            actualFare = bData.fare || 75;
+            break;
+          }
+        }
+      }
+
+      if (!truePassengerId) {
+        console.log(`[Trip Ticket] Could not find original booking for ${bookingId}`);
+        // Fallback just in case `passengerId` was correct
+        truePassengerId = passengerId;
+      }
+
+      // Firebase lookup for passenger's Solana wallet
+      const passengerRef = ref(db, `users/${truePassengerId}`);
       const passengerSnap = await get(passengerRef);
 
-      if (!passengerSnap.exists()) return;
+      if (!passengerSnap.exists()) {
+        console.log(`[Trip Ticket] Passenger ${truePassengerId} does not exist.`);
+        return;
+      }
 
       const passengerData = passengerSnap.val();
       const passengerWallet = passengerData.solanaWallet;
 
       if (!passengerWallet) {
-        console.log(`[Trip Ticket] Passenger ${passengerId} has no linked Solana Wallet.`);
+        console.log(`[Trip Ticket] Passenger ${truePassengerId} has no linked Solana Wallet.`);
         return; // Silently exit if no wallet
       }
 
-      // Find the specific booking ID. 
-      // In this app, Passenger objects in the state represent active bookings.
-      // We pass the raw passenger ID as the booking ID placeholder if we don't have the exact booking ID handy,
-      // though typically the bookings listener might give us the true booking ID. 
-      // The `passengers` state actually stores the `booking.id` inside `passenger.id` from subscribeToBookings.
-      const bookingId = passengerId;
-
       const payload = {
-        passengerId: passengerData.id || passengerId,
+        passengerId: truePassengerId,
         passengerWallet,
         bookingId,
-        fare: 75, // Static fare for demo based on PassengerList estimated revenue
-        route: selectedBus.route,
-        driverName: selectedBus.driverName,
+        fare: actualFare,
+        route: selectedBus.route || 'Local Trip',
+        driverName: selectedBus.driverName || 'Yatra Driver',
       };
 
       // Call internal Next.js API route to perform the minting securely
@@ -700,21 +728,36 @@ export default function DriverDashboard() {
 
   // Auth guard
   useEffect(() => {
+    // Only execute if Firebase auth has finished checking state
     if (!loading) {
       if (!currentUser) {
         router.replace('/auth?redirect=/driver');
         return;
       }
+
       if (role && role !== 'driver') {
         router.replace('/passenger');
         return;
       }
-      // Only check for vehicleNumber if userData is loaded (not null)
-      // If userData is null but we have currentUser, it might still be loading
-      if (userData !== null && !(userData as any)?.vehicleNumber) {
-        // Profile incomplete (missing vehicle details)
+
+      // If `loading` is false and `userData` is strictly null, the user has NO profile in DB.
+      if (userData === null) {
         router.replace('/auth/profile');
         return;
+      }
+
+      // If userData exists, check completeness
+      const isComplete = (userData as any).role ? checkProfileCompletion(userData) : false;
+
+      if (!isComplete && userData) {
+        router.replace('/auth/profile');
+        return;
+      }
+
+      // ZK Identity Redirect check (Phase 1 upgrade)
+      if (userData && isComplete && !(userData as any)?.verificationBadge) {
+        // Automatically open the ZK onboarding panel inline
+        setShowZKPanel(true);
       }
     }
   }, [currentUser, role, loading, router, userData]);
@@ -735,6 +778,9 @@ export default function DriverDashboard() {
     );
   }
 
+  // Determine if profile is stable
+  const isProfileStable = userData && checkProfileCompletion(userData);
+
   return (
     <div
       className="min-h-screen flex flex-col overflow-y-auto"
@@ -750,6 +796,31 @@ export default function DriverDashboard() {
           >
             Dismiss
           </Button>
+        </div>
+      )}
+
+      {/* ── ZK Identity Verification Panel (auto-shows if badge is missing) ── */}
+      {showZKPanel && userData && (
+        <div className="fixed inset-0 z-[1100] bg-slate-950/95 flex flex-col items-center justify-center p-6 overflow-y-auto">
+          <div className="w-full max-w-lg">
+            <div className="mb-4 text-center">
+              <h2 className="text-xl font-bold text-white">ZK Identity Required</h2>
+              <p className="text-slate-400 text-sm mt-1">Complete your ZK verification to unlock the full Cockpit.</p>
+            </div>
+            <VerificationPanel
+              driver={userData as Driver}
+              onVerificationSuccess={() => {
+                setShowZKPanel(false);
+                toast({ title: '✅ Verified!', description: 'Your ZK badge is minted. Welcome to the Cockpit.' });
+              }}
+            />
+            <button
+              onClick={() => setShowZKPanel(false)}
+              className="mt-4 w-full text-xs text-slate-500 hover:text-slate-300 transition-colors"
+            >
+              Skip for now
+            </button>
+          </div>
         </div>
       )}
 
@@ -870,15 +941,20 @@ export default function DriverDashboard() {
               )}
             </div>
 
-            {/* Sign Out */}
-            <Button variant="ghost" onClick={signOut} size="icon"
-              className="w-9 h-9 rounded-full bg-slate-900/50 border border-slate-700/50 text-red-400 hover:text-red-300 hover:bg-red-500/10">
-              <span className="sr-only">Sign Out</span>
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                <polyline points="16 17 21 12 16 7" />
-                <line x1="21" x2="9" y1="12" y2="12" />
-              </svg>
+            {/* STABLE AVATAR LOGIC (Replaces plain Sign Out Door) */}
+            <Button
+              variant="outline"
+              size="icon"
+              className="w-10 h-10 rounded-full bg-slate-900 border-2 border-cyan-500/50 shadow-[0_0_15px_rgba(34,211,238,0.2)]"
+              onClick={() => signOut()} // Logout for now, or open profile
+            >
+              {isProfileStable ? (
+                <span className="text-sm font-black text-cyan-400">
+                  {userData?.name ? userData.name[0].toUpperCase() : '?'}
+                </span>
+              ) : (
+                <div className="h-4 w-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+              )}
             </Button>
           </div>
         </div>
