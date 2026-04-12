@@ -1,7 +1,7 @@
+/* name=app/globals.css */
 @tailwind base;
 @tailwind components;
-@tailwind utilities; 
-
+@tailwind utilities;
 
 :root {
   --neon: #00C2FF;
@@ -10,6 +10,7 @@
   --glass: rgba(255, 255, 255, 0.03);
   --glass-border: rgba(255, 255, 255, 0.07);
   --muted: rgba(232, 244, 255, 0.45);
+  --accent: #00C2FF;
 }
 
 @layer utilities {
@@ -45,6 +46,7 @@
   border: 0.5px solid var(--glass-border) !important;
   border-radius: 16px !important;
 }
+
 .wallet-adapter-button-trigger {
   background: transparent !important;
   border: 1px solid var(--neon) !important;
@@ -56,7 +58,312 @@
   text-transform: uppercase !important;
   transition: box-shadow 0.25s !important;
 }
+
 .wallet-adapter-button-trigger:hover {
   background: var(--neon-dim) !important;
   box-shadow: 0 0 20px var(--neon-glow) !important;
-} 
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Dashboard Layout
+   ───────────────────────────────────────────────────────────────────── */
+
+.drishti-root {
+  @apply min-h-screen bg-[#050505];
+}
+
+.drishti-main {
+  @apply relative z-10 flex-1 overflow-y-auto;
+}
+
+.page-header {
+  @apply mb-12 px-8 pt-32;
+}
+
+.page-eyebrow {
+  @apply block mb-2 text-[11px] font-mono-custom tracking-[0.15em] uppercase;
+  color: var(--neon);
+}
+
+.page-title {
+  @apply mb-2 text-4xl font-bold text-white font-display md:text-5xl;
+}
+
+.title-accent {
+  color: var(--neon);
+}
+
+.page-sub {
+  @apply text-sm text-white/50;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Transaction Table
+   ───────────────────────────────────────────────────────────────────── */
+
+.tx-table-section {
+  @apply relative z-10 max-w-[1200px] mx-auto px-8 py-12;
+}
+
+.tx-table-header {
+  @apply mb-6;
+}
+
+.tx-table-title-row {
+  @apply flex items-center justify-between mb-2;
+}
+
+.tx-table-title {
+  @apply flex items-center gap-2 mb-2 text-2xl font-bold text-white font-display;
+}
+
+.tx-count {
+  @apply text-xs font-mono-custom text-white/40;
+}
+
+.tx-table-subtitle {
+  @apply text-xs text-white/40;
+}
+
+.tx-scroll-container {
+  @apply overflow-x-auto glass-card;
+}
+
+.tx-table {
+  @apply w-full;
+}
+
+.tx-table thead {
+  @apply border-b border-white/[0.07];
+}
+
+.tx-table thead th {
+  @apply px-6 py-4 text-left text-xs font-semibold font-mono-custom text-white/60 uppercase tracking-[0.06em];
+}
+
+.tx-table tbody td {
+  @apply px-6 py-4 text-sm border-b border-white/[0.04] text-white/80;
+}
+
+.tx-table tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.01);
+}
+
+.tx-row {
+  @apply transition-colors;
+}
+
+.tx-row--new {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.td-sig {
+  @apply text-xs font-mono-custom;
+}
+
+.sig-link {
+  @apply hover:underline;
+  color: var(--neon);
+}
+
+.td-time {
+  @apply text-xs font-mono-custom text-white/50;
+}
+
+.td-ministry {
+  @apply text-sm font-medium;
+}
+
+.td-project {
+  @apply text-xs text-white/60;
+}
+
+.td-amount {
+  @apply font-bold text-xs font-mono-custom;
+  color: var(--neon);
+}
+
+.td-slot {
+  @apply text-xs font-mono-custom text-white/50;
+}
+
+.status-badge {
+  @apply inline-block px-3 py-1.5 text-xs font-bold font-mono-custom rounded-full uppercase tracking-[0.08em];
+}
+
+.badge-finalized {
+  background-color: rgba(52, 211, 153, 0.1);
+  color: #34d399;
+}
+
+.badge-confirmed {
+  background-color: rgba(0, 194, 255, 0.1);
+  color: var(--neon);
+}
+
+.badge-pending {
+  background-color: rgba(255, 160, 0, 0.1);
+  color: #FFA000;
+}
+
+.category-pill {
+  @apply inline-block px-2.5 py-1.5 text-xs font-medium font-mono-custom border rounded;
+}
+
+.live-dot {
+  @apply inline-block w-2 h-2 rounded-full;
+  background-color: #00FF88;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   KPI Cards
+   ───────────────────────────────────────────────────────────────────── */
+
+.kpi-strip {
+  @apply grid gap-4 mb-8 grid-cols-1 md:grid-cols-2 lg:grid-cols-4;
+}
+
+.kpi-card {
+  @apply relative p-6 overflow-hidden glass-card;
+}
+
+.kpi-accent-bar {
+  @apply absolute top-0 left-0 w-full h-1;
+  background-color: var(--accent);
+}
+
+.kpi-label {
+  @apply block mb-2 text-xs font-mono-custom uppercase tracking-[0.06em] text-white/50;
+}
+
+.kpi-value {
+  @apply text-3xl font-bold text-white font-display;
+}
+
+.kpi-suffix {
+  @apply ml-1 text-lg text-white/60;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Navigation - Top Nav
+   ───────────────────────────────────────────────────────────────────── */
+
+.top-nav {
+  @apply fixed top-0 inset-x-0 z-40 flex items-center justify-between h-16 px-8 border-b border-white/[0.06];
+  background-color: rgba(5, 5, 5, 0.7);
+  backdrop-filter: blur(20px);
+}
+
+.nav-brand {
+  @apply flex items-center gap-2.5;
+}
+
+.nav-emblem {
+  @apply text-2xl;
+}
+
+.nav-wordmark {
+  @apply flex flex-col;
+}
+
+.nav-wordmark-drishti {
+  @apply text-[17px] font-bold font-display uppercase tracking-[0.08em];
+}
+
+.nav-wordmark-np {
+  @apply block text-[9px] font-light tracking-[0.15em] text-white/30;
+}
+
+.nav-actions {
+  @apply flex items-center gap-3;
+}
+
+.network-pill {
+  @apply flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono-custom text-white/50 border border-white/[0.07] rounded-full;
+}
+
+.net-dot {
+  @apply inline-block w-1.5 h-1.5 rounded-full;
+  background-color: #00FF88;
+}
+
+.btn-wallet {
+  @apply px-3 py-1.5 text-xs font-bold font-mono-custom rounded-lg border uppercase tracking-[0.08em] transition-all;
+  border-color: var(--neon);
+  color: var(--neon);
+}
+
+.btn-wallet:hover {
+  box-shadow: 0 0 20px rgba(0, 194, 255, 0.5);
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Navigation - Side Nav
+   ───────────────────────────────────────────────────────────────────── */
+
+.side-nav {
+  @apply fixed left-8 z-30 flex flex-col gap-4;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.side-nav-item {
+  @apply relative flex items-center gap-2 px-4 py-3 text-white/40 border border-transparent rounded-lg transition-all hover:border-[#00C2FF]/20;
+}
+
+.side-nav-item--active {
+  color: var(--neon);
+  border-color: rgba(0, 194, 255, 0.4);
+}
+
+.side-nav-icon {
+  @apply text-xl;
+}
+
+.side-nav-label {
+  @apply text-xs font-mono-custom uppercase tracking-[0.06em];
+}
+
+.side-nav-indicator {
+  @apply absolute w-1 h-6 rounded-full;
+  right: -32px;
+  background-color: var(--neon);
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Vault Background
+   ───────────────────────────────────────────────────────────────────── */
+
+.vault-bg {
+  @apply fixed inset-0 z-0 bg-[#050505];
+}
+
+.vault-vignette {
+  @apply absolute inset-0 z-10;
+  background: radial-gradient(ellipse 80% 60% at 50% 50%, transparent, #050505);
+}
+
+.vault-placeholder {
+  @apply fixed inset-0 z-0;
+  background: linear-gradient(to bottom right, transparent, rgba(0, 194, 255, 0.02), transparent);
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Scrollbar Styling (Optional)
+   ───────────────────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  @apply w-2;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-white/[0.02];
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-white/[0.1] rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-white/[0.2];
+}
