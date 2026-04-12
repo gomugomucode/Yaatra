@@ -1,7 +1,12 @@
 /* name=app/globals.css */
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ═══════════════════════════════════════════════════════════════════════
+   ROOT VARIABLES
+   ═══════════════════════════════════════════════════════════════════════ */
 
 :root {
   --neon: #00C2FF;
@@ -13,25 +18,36 @@
   --accent: #00C2FF;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   TAILWIND LAYER UTILITIES
+   ═══════════════════════════════════════════════════════════════════════ */
+
 @layer utilities {
   .glass-card {
-    @apply bg-white/[0.03] border border-white/[0.07] backdrop-blur-xl rounded-xl;
+    @apply rounded-xl border bg-white/[0.03] border-white/[0.07] backdrop-blur-xl;
   }
+
   .neon-text {
     color: var(--neon);
   }
+
   .font-mono-custom {
     font-family: var(--font-mono);
   }
+
   .font-display {
     font-family: var(--font-syne);
   }
+
   .neon-border {
-    @apply border border-[#00C2FF]/20 hover:border-[#00C2FF]/40 transition-colors;
+    @apply border border-[#00C2FF]/20 transition-colors hover:border-[#00C2FF]/40;
   }
 }
 
-/* Grid background */
+/* ═══════════════════════════════════════════════════════════════════════
+   GRID BACKGROUND
+   ═══════════════════════════════════════════════════════════════════════ */
+
 .bg-grid {
   background-image:
     linear-gradient(rgba(0, 194, 255, 0.04) 1px, transparent 1px),
@@ -40,7 +56,10 @@
   mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 40%, transparent 100%);
 }
 
-/* Wallet adapter modal override */
+/* ═══════════════════════════════════════════════════════════════════════
+   WALLET ADAPTER STYLING
+   ═══════════════════════════════════════════════════════════════════════ */
+
 .wallet-adapter-modal-wrapper {
   background: #090912 !important;
   border: 0.5px solid var(--glass-border) !important;
@@ -64,29 +83,55 @@
   box-shadow: 0 0 20px var(--neon-glow) !important;
 }
 
-/* ─────────────────────────────────────────────────────────────────────
-   Dashboard Layout
-   ───────────────────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════
+   DASHBOARD LAYOUT
+   ═══════════════════════════════════════════════════════════════════════ */
 
 .drishti-root {
-  @apply min-h-screen bg-[#050505];
+  min-height: 100vh;
+  background-color: #050505;
+  display: flex;
+  flex-direction: column;
 }
 
 .drishti-main {
-  @apply relative z-10 flex-1 overflow-y-auto;
+  position: relative;
+  z-index: 10;
+  flex: 1;
+  overflow-y: auto;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   PAGE HEADER
+   ═══════════════════════════════════════════════════════════════════════ */
+
 .page-header {
-  @apply mb-12 px-8 pt-32;
+  margin-bottom: 3rem;
+  padding: 8rem 2rem 0;
 }
 
 .page-eyebrow {
-  @apply block mb-2 text-[11px] font-mono-custom tracking-[0.15em] uppercase;
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
   color: var(--neon);
 }
 
 .page-title {
-  @apply mb-2 text-4xl font-bold text-white font-display md:text-5xl;
+  margin-bottom: 0.5rem;
+  font-size: 2.25rem;
+  font-weight: bold;
+  font-family: var(--font-syne);
+  color: white;
+}
+
+@media (min-width: 768px) {
+  .page-title {
+    font-size: 3rem;
+  }
 }
 
 .title-accent {
@@ -94,55 +139,82 @@
 }
 
 .page-sub {
-  @apply text-sm text-white/50;
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.5);
 }
 
-/* ─────────────────────────────────────────────────────────────────────
-   Transaction Table
-   ───────────────────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════
+   TRANSACTION TABLE SECTION
+   ═══════════════════════════════════════════════════════════════════════ */
 
 .tx-table-section {
-  @apply relative z-10 max-w-[1200px] mx-auto px-8 py-12;
+  position: relative;
+  z-index: 10;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 3rem 2rem;
 }
 
 .tx-table-header {
-  @apply mb-6;
+  margin-bottom: 1.5rem;
 }
 
 .tx-table-title-row {
-  @apply flex items-center justify-between mb-2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
 }
 
 .tx-table-title {
-  @apply flex items-center gap-2 mb-2 text-2xl font-bold text-white font-display;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.5rem;
+  font-weight: bold;
+  font-family: var(--font-syne);
+  color: white;
 }
 
 .tx-count {
-  @apply text-xs font-mono-custom text-white/40;
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  color: rgba(255, 255, 255, 0.4);
 }
 
 .tx-table-subtitle {
-  @apply text-xs text-white/40;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.4);
 }
 
 .tx-scroll-container {
-  @apply overflow-x-auto glass-card;
+  overflow-x: auto;
 }
 
 .tx-table {
-  @apply w-full;
+  width: 100%;
 }
 
 .tx-table thead {
-  @apply border-b border-white/[0.07];
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
 }
 
 .tx-table thead th {
-  @apply px-6 py-4 text-left text-xs font-semibold font-mono-custom text-white/60 uppercase tracking-[0.06em];
+  padding: 1rem 1.5rem;
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  color: rgba(255, 255, 255, 0.6);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 .tx-table tbody td {
-  @apply px-6 py-4 text-sm border-b border-white/[0.04] text-white/80;
+  padding: 1rem 1.5rem;
+  font-size: 0.875rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.8);
 }
 
 .tx-table tbody tr:hover {
@@ -150,7 +222,7 @@
 }
 
 .tx-row {
-  @apply transition-colors;
+  transition: background-color 0.2s ease;
 }
 
 .tx-row--new {
@@ -158,37 +230,58 @@
 }
 
 .td-sig {
-  @apply text-xs font-mono-custom;
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
 }
 
 .sig-link {
-  @apply hover:underline;
   color: var(--neon);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.sig-link:hover {
+  text-decoration: none;
 }
 
 .td-time {
-  @apply text-xs font-mono-custom text-white/50;
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .td-ministry {
-  @apply text-sm font-medium;
+  font-size: 0.875rem;
+  font-weight: 500;
 }
 
 .td-project {
-  @apply text-xs text-white/60;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.6);
 }
 
 .td-amount {
-  @apply font-bold text-xs font-mono-custom;
+  font-size: 0.75rem;
+  font-weight: bold;
+  font-family: var(--font-mono);
   color: var(--neon);
 }
 
 .td-slot {
-  @apply text-xs font-mono-custom text-white/50;
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .status-badge {
-  @apply inline-block px-3 py-1.5 text-xs font-bold font-mono-custom rounded-full uppercase tracking-[0.08em];
+  display: inline-block;
+  padding: 0.375rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: bold;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border-radius: 999px;
 }
 
 .badge-finalized {
@@ -207,108 +300,199 @@
 }
 
 .category-pill {
-  @apply inline-block px-2.5 py-1.5 text-xs font-medium font-mono-custom border rounded;
+  display: inline-block;
+  padding: 0.375rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-family: var(--font-mono);
+  border: 1px solid;
+  border-radius: 0.25rem;
 }
 
 .live-dot {
-  @apply inline-block w-2 h-2 rounded-full;
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
   background-color: #00FF88;
 }
 
-/* ─────────────────────────────────────────────────────────────────────
-   KPI Cards
-   ───────────────────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════
+   KPI CARDS
+   ══════════════════════════════════════════════════════════════════════�� */
 
 .kpi-strip {
-  @apply grid gap-4 mb-8 grid-cols-1 md:grid-cols-2 lg:grid-cols-4;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
 }
 
 .kpi-card {
-  @apply relative p-6 overflow-hidden glass-card;
+  position: relative;
+  overflow: hidden;
+  padding: 1.5rem;
 }
 
 .kpi-accent-bar {
-  @apply absolute top-0 left-0 w-full h-1;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 4px;
   background-color: var(--accent);
 }
 
 .kpi-label {
-  @apply block mb-2 text-xs font-mono-custom uppercase tracking-[0.06em] text-white/50;
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .kpi-value {
-  @apply text-3xl font-bold text-white font-display;
+  font-size: 1.875rem;
+  font-weight: bold;
+  font-family: var(--font-syne);
+  color: white;
 }
 
 .kpi-suffix {
-  @apply ml-1 text-lg text-white/60;
+  margin-left: 0.25rem;
+  font-size: 1.125rem;
+  color: rgba(255, 255, 255, 0.6);
 }
 
-/* ─────────────────────────────────────────────────────────────────────
-   Navigation - Top Nav
-   ───────────────────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════
+   TOP NAVIGATION
+   ═══════════════════════════════════════════════════════════════════════ */
 
 .top-nav {
-  @apply fixed top-0 inset-x-0 z-40 flex items-center justify-between h-16 px-8 border-b border-white/[0.06];
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 4rem;
+  padding: 0 2rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   background-color: rgba(5, 5, 5, 0.7);
   backdrop-filter: blur(20px);
 }
 
 .nav-brand {
-  @apply flex items-center gap-2.5;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
 }
 
 .nav-emblem {
-  @apply text-2xl;
+  font-size: 1.5rem;
 }
 
 .nav-wordmark {
-  @apply flex flex-col;
+  display: flex;
+  flex-direction: column;
 }
 
 .nav-wordmark-drishti {
-  @apply text-[17px] font-bold font-display uppercase tracking-[0.08em];
+  font-size: 1.0625rem;
+  font-weight: bold;
+  font-family: var(--font-syne);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .nav-wordmark-np {
-  @apply block text-[9px] font-light tracking-[0.15em] text-white/30;
+  display: block;
+  font-size: 0.5625rem;
+  font-weight: 300;
+  letter-spacing: 0.15em;
+  color: rgba(255, 255, 255, 0.3);
 }
 
 .nav-actions {
-  @apply flex items-center gap-3;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .network-pill {
-  @apply flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono-custom text-white/50 border border-white/[0.07] rounded-full;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  color: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 999px;
 }
 
 .net-dot {
-  @apply inline-block w-1.5 h-1.5 rounded-full;
+  display: inline-block;
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 999px;
   background-color: #00FF88;
 }
 
 .btn-wallet {
-  @apply px-3 py-1.5 text-xs font-bold font-mono-custom rounded-lg border uppercase tracking-[0.08em] transition-all;
-  border-color: var(--neon);
+  padding: 0.375rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: bold;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border: 1px solid var(--neon);
+  border-radius: 0.5rem;
   color: var(--neon);
+  background-color: transparent;
+  transition: all 0.2s ease;
+  cursor: pointer;
 }
 
 .btn-wallet:hover {
   box-shadow: 0 0 20px rgba(0, 194, 255, 0.5);
 }
 
-/* ─────────────────────────────────────────────────────────────────────
-   Navigation - Side Nav
-   ───────────────────────────────────────────────────────────────────── */
+/* ═════════════════════════════════════════════════════════════════════��═
+   SIDE NAVIGATION
+   ═══════════════════════════════════════════════════════════════════════ */
 
 .side-nav {
-  @apply fixed left-8 z-30 flex flex-col gap-4;
+  position: fixed;
+  left: 2rem;
   top: 50%;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
   transform: translateY(-50%);
 }
 
 .side-nav-item {
-  @apply relative flex items-center gap-2 px-4 py-3 text-white/40 border border-transparent rounded-lg transition-all hover:border-[#00C2FF]/20;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
+  color: rgba(255, 255, 255, 0.4);
+  background-color: transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.side-nav-item:hover {
+  border-color: rgba(0, 194, 255, 0.2);
 }
 
 .side-nav-item--active {
@@ -317,53 +501,76 @@
 }
 
 .side-nav-icon {
-  @apply text-xl;
+  font-size: 1.25rem;
 }
 
 .side-nav-label {
-  @apply text-xs font-mono-custom uppercase tracking-[0.06em];
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 .side-nav-indicator {
-  @apply absolute w-1 h-6 rounded-full;
-  right: -32px;
+  position: absolute;
+  right: -2rem;
+  width: 4px;
+  height: 1.5rem;
+  border-radius: 999px;
   background-color: var(--neon);
 }
 
-/* ─────────────────────────────────────────────────────────────────────
-   Vault Background
-   ───────────────────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════
+   VAULT BACKGROUND
+   ═══════════════════════════════════════════════════════════════════════ */
 
 .vault-bg {
-  @apply fixed inset-0 z-0 bg-[#050505];
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-color: #050505;
 }
 
 .vault-vignette {
-  @apply absolute inset-0 z-10;
-  background: radial-gradient(ellipse 80% 60% at 50% 50%, transparent, #050505);
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: radial-gradient(
+    ellipse 80% 60% at 50% 50%,
+    transparent,
+    #050505
+  );
 }
 
 .vault-placeholder {
-  @apply fixed inset-0 z-0;
-  background: linear-gradient(to bottom right, transparent, rgba(0, 194, 255, 0.02), transparent);
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: linear-gradient(
+    to bottom right,
+    transparent,
+    rgba(0, 194, 255, 0.02),
+    transparent
+  );
 }
 
-/* ─────────────────────────────────────────────────────────────────────
-   Scrollbar Styling (Optional)
-   ───────────────────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════
+   SCROLLBAR STYLING
+   ═══════════════════════════════════════════════════════════════════════ */
 
 ::-webkit-scrollbar {
-  @apply w-2;
+  width: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-white/[0.02];
+  background-color: rgba(255, 255, 255, 0.02);
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-white/[0.1] rounded-full;
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-white/[0.2];
+  background-color: rgba(255, 255, 255, 0.2);
 }

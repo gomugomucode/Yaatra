@@ -1,49 +1,38 @@
-// import type { Config } from 'tailwindcss'
-
-// const config: Config = {
-//   content: ['./app/**/*.{ts,tsx}', './components/**/*.{ts,tsx}'],
-//   theme: {
-//     extend: {
-//       fontFamily: {
-//         display: ['var(--font-syne)', 'sans-serif'],
-//         mono: ['var(--font-mono)', 'monospace'],
-//         body: ['var(--font-inter)', 'sans-serif'],
-//       },
-//       keyframes: {
-//         shimmer: {
-//           '0%': { backgroundPosition: '200% center' },
-//           '100%': { backgroundPosition: '-200% center' },
-//         },
-//         'scroll-left': {
-//           '0%': { transform: 'translateX(0)' },
-//           '100%': { transform: 'translateX(-50%)' },
-//         },
-//       },
-//       animation: {
-//         shimmer: 'shimmer 4s linear infinite',
-//         'scroll-left': 'scroll-left 30s linear infinite',
-//       },
-//     },
-//   },
-// }
-// export default config
-
-
+name=tailwind.config.ts
 import type { Config } from "tailwindcss";
 
 export default {
   content: [
-    "./app/**/*.{js,ts,jsx,tsx}",
-    "./components/**/*.{js,ts,jsx,tsx}",
-    "./lib/**/*.{js,ts,jsx,tsx}",
-    "./hooks/**/*.{js,ts,jsx,tsx}",
+    "./app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./components/**/*.{js,ts,jsx,tsx,mdx}",
+    "./lib/**/*.{js,ts,jsx,tsx,mdx}",
+    "./hooks/**/*.{js,ts,jsx,tsx,mdx}",
+    "./public/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
     extend: {
       colors: {
         neon: "#00C2FF",
       },
+      fontFamily: {
+        display: ["var(--font-syne)"],
+        mono: ["var(--font-mono)"],
+        inter: ["var(--font-inter)"],
+      },
     },
   },
   plugins: [],
+  safelist: [
+    // Add classes that might be dynamically generated
+    "bg-white/[0.03]",
+    "border-white/[0.07]",
+    "text-white/[0.06]",
+    "bg-white/[0.01]",
+    "bg-white/[0.05]",
+    "border-white/[0.06]",
+    "border-[#00C2FF]/20",
+    "hover:border-[#00C2FF]/40",
+    "text-[#00C2FF]",
+    "bg-[#050505]",
+  ],
 } satisfies Config;
