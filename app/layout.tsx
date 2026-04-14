@@ -22,12 +22,15 @@ const jetbrainsMono = JetBrains_Mono({
   variable: "--font-jetbrains-mono",
   subsets: ["latin"],
 });
+export const viewport = {
+  themeColor: "#05070A",  // ← same color value
+};
 
 export const metadata: Metadata = {
   title: "YATRA",
   description: "Track your bus in real-time, book seats, and share your ride.",
   manifest: "/manifest.json",
-  themeColor: "#05070A",
+ 
   applicationName: "Yatra",
   appleWebApp: {
     capable: true,
@@ -49,7 +52,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body
         className={`${outfit.variable} ${jetbrainsMono.variable} ${mukta.variable} antialiased font-sans`}
       >

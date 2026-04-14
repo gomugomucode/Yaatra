@@ -1,14 +1,25 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { BusFront, Users, MapPin, Clock, Navigation, Smartphone, ArrowRight, Zap, Star } from 'lucide-react';
 import { useAuth } from '@/lib/contexts/AuthContext';
-import YatraHero from '@/components/YatraHero';
+// import YatraHero from '@/components/YatraHero';
 import { subscribeToBuses } from '@/lib/firebaseDb';
 import { ScrollReveal } from '@/components/ui/ScrollReveal';
-import { LottieAnimation } from '@/components/landing/LottieAnimation';
+// import { LottieAnimation } from '@/components/landing/LottieAnimation';
+
+const LottieAnimation = dynamic(
+  () => import('@/components/landing/LottieAnimation').then(mod => mod.LottieAnimation),
+  { ssr: false }
+);
+
+const YatraHero = dynamic(
+  () => import('@/components/YatraHero'),
+  { ssr: false }
+);
 
 export default function Home() {
   const { currentUser, signOut } = useAuth();
