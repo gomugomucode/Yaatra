@@ -1,0 +1,57 @@
+{
+  "rules": {
+    "buses": {
+      ".read": true,
+      "$busId": {
+        ".write": "auth != null && (auth.uid === $busId || root.child('users').child(auth.uid).child('role').val() === 'admin')",
+        "currentLocation": {
+          ".validate": "newData.hasChildren(['lat', 'lng', 'timestamp'])"
+        }
+      }
+    },
+    "locations": {
+      ".read": true, 
+      "$uid": {
+        ".write": "auth != null && (auth.uid === $uid || root.child('users').child(auth.uid).child('role').val() === 'admin')"
+      }
+    },
+    "drivers": {
+      "active": {
+        ".read": true,
+        "$driverId": {
+          ".write": "auth != null && (auth.uid === $driverId || root.child('users').child(auth.uid).child('role').val() === 'admin')"
+        }
+      }
+    },
+    "bookings": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      ".indexOn": ["busId", "passengerId"]
+    },
+    "tripRequests": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$busId": {
+        ".indexOn": ["createdAt", "status"]
+      }
+    },
+    "trips": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      ".indexOn": ["driverId", "passengerId", "status", "createdAt"]
+    },
+    "users": {
+      "$uid": {
+        ".read": "auth != null", 
+        ".write": "auth != null && auth.uid === $uid",
+        "verificationBadge": {
+           ".validate": "newData.hasChildren(['mintAddress', 'txSignature'])"
+        }
+      }
+    },
+    "alerts": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    }
+  }
+}

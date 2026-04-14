@@ -1,156 +1,151 @@
-# 🏔️ Drishti — Fiscal Transparency Portal
-### Government of Nepal · On-Chain Public Expenditure Dashboard
+<div align="center">
+
+# यात्री · Yatra
+
+**Nepal's Transit Ecosystem, Tokenized & Verifiable.**
+
+[![Next.js](https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js)](https://nextjs.org)
+[![Solana](https://img.shields.io/badge/Solana-Token--2022-9945FF?style=flat-square&logo=solana)](https://solana.com)
+[![Firebase](https://img.shields.io/badge/Firebase-Realtime%20DB-FFCA28?style=flat-square&logo=firebase&logoColor=black)](https://firebase.google.com)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript)](https://typescriptlang.org)
+[![ZK](https://img.shields.io/badge/Identity-ZK--Civic-0057FF?style=flat-square)](https://civic.com)
+
+</div>
 
 ---
 
-## Architecture Overview
+## Overview
 
-```
-app/
-  layout.tsx              ← Root Server Component (no "use client")
-  globals.css             ← Design system tokens + all component CSS
-  dashboard/
-    page.tsx              ← Server Component — thin shell, exports metadata
-
-components/dashboard/
-  DrishtiDashboard.tsx    ← Client Component — page orchestrator + Framer Motion
-  VaultBackground.tsx     ← Client Component — Spline 3D scene (NEVER import directly)
-  TransactionTable.tsx    ← Client Component — live-polling table with AnimatePresence
-  KpiStrip.tsx            ← Client Component — 4 animated KPI cards
-  TopNav.tsx              ← Client Component — sticky top bar
-  SideNav.tsx             ← Client Component — vertical icon nav
-
-lib/
-  transactions.ts         ← Types, mock data generator, formatters
-```
+**Yatra** (यात्री) is a decentralized transport application built for the Nepal transit ecosystem. It combines real-time bus tracking with blockchain-powered trust—issuing **Soulbound NFT receipts** on Solana for every trip and using **ZK-Civic** to verify driver identity without exposing private data.
 
 ---
 
-## Critical Technical Decisions
+## Problem Statement
 
-### 1. Hydration-Safe 3D Integration
+Nepal's public transport lacks:
+- **Real-time visibility** — passengers can't track buses live.
+- **Trusted driver identity** — no verifiable credential system.
+- **Immutable receipts** — tickets are physical, fragile, and untraceable.
 
-The Spline WebGL runtime accesses `window`, `document`, and `WebGLRenderingContext`
-which do not exist in Node.js. Importing `VaultBackground` directly would cause:
+---
 
-```
-Error: document is not defined
-ReferenceError: WebGLRenderingContext is not defined
-```
+## Solution Architecture
 
-**Solution** — always import via `dynamic` with `ssr: false`:
+Yatra is built on a three-layer hybrid stack:
 
-```ts
-// ✅ Correct — in DrishtiDashboard.tsx
-const VaultBackground = dynamic(() => import("./VaultBackground"), { ssr: false });
+| Layer | Technology | Purpose |
+|---|---|---|
+| 🔗 **Settlement** | Solana Token-2022 | Soulbound NFT receipts per trip |
+| 🛡️ **Identity** | ZK-Civic (Groth16 ZKP) | Driver verification without data exposure |
+| 📡 **Telemetry** | Firebase Realtime DB | Live bus tracking & seat occupancy sync |
 
-// ❌ Wrong — direct import would break SSR
-import VaultBackground from "./VaultBackground";
-```
+---
 
-### 2. No Async Client Components
+## Key Features
 
-Next.js 15 prohibits `async` Client Components. All data fetching uses `useEffect`:
+### 🚗 For Chalakh (चालक · Driver)
+- **ZK Identity Onboarding** — Verified via on-chain ZK proof; no raw documents exposed.
+- **Driver Command Center** — High-performance cockpit UI to manage route, seats, and passengers.
+- **On-Chain Trip Logs** — Every completed trip is logged as an immutable Soulbound NFT.
+- **SOS & Real-time Status** — Emergency alert system and live online/offline toggling.
 
-```ts
-// ✅ Correct
-"use client";
-export default function TransactionTable() {
-  const [txs, setTxs] = useState([]);
-  useEffect(() => { /* fetch here */ }, []);
-  return <table>...</table>;
-}
+### 🎒 For Yatri (यात्री · Passenger)
+- **Live Bus Tracking** — Millisecond-latency location updates on an interactive Leaflet map.
+- **Soulbound Receipts** — Non-transferable NFT proof of travel, minted on Solana after trip completion.
+- **Proximity Notifications** — Geofenced alerts when the bus nears your pickup point.
+- **Seat Transparency** — Real-time visibility into booked, occupied, and available seats.
 
-// ❌ Wrong
-"use client";
-export default async function TransactionTable() { /* not allowed */ }
-```
+---
 
-### 3. ESM Transpilation for Spline
+## Technical Stack
 
-`@splinetool/react-spline` ships as ESM-only. Without the `transpilePackages`
-directive in `next.config.ts`, Next.js 15 throws a `SyntaxError: Cannot use
-import statement` during the server build phase.
-
-```ts
-// next.config.ts
-transpilePackages: ["@splinetool/react-spline", "@splinetool/runtime"]
-```
+| Category | Technology |
+|---|---|
+| **Framework** | Next.js 16 (App Router), React 19 |
+| **Language** | TypeScript 5 |
+| **Styling** | Tailwind CSS v4, Framer Motion |
+| **Blockchain** | Solana Web3.js, SPL Token-2022, SnarkJS (Groth16) |
+| **Identity** | Civic Pass / ZK-Civic |
+| **Database** | Firebase Realtime DB + Admin SDK |
+| **Maps** | Leaflet.js + React-Leaflet |
+| **Auth** | Firebase Authentication |
+| **Validation** | Zod, React Hook Form |
 
 ---
 
 ## Getting Started
 
+### Prerequisites
+
+- Node.js 18+
+- A Solana keypair (for minting receipts)
+- A Firebase project with Realtime Database enabled
+
+### Installation
+
 ```bash
-# Install dependencies
-pnpm install
+git clone https://github.com/your-repo/yatra.git
+cd yatra
+npm install
+```
 
-# Run development server (Turbopack)
-pnpm dev
+### Environment Variables
 
-# Open http://localhost:3000/dashboard
+Create a `.env.local` file in the project root:
+
+```env
+# ── Solana ──────────────────────────────────────────
+SOLANA_RPC_URL=https://api.devnet.solana.com
+SOLANA_KEYPAIR=[your_base58_or_array_private_key]
+
+# ── Firebase Client ──────────────────────────────────
+NEXT_PUBLIC_FIREBASE_API_KEY=your_api_key
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
+NEXT_PUBLIC_FIREBASE_DATABASE_URL=https://your_project.firebaseio.com
+NEXT_PUBLIC_FIREBASE_APP_ID=your_app_id
+
+# ── Firebase Admin SDK (server-side) ────────────────
+FIREBASE_PROJECT_ID=your_project_id
+FIREBASE_CLIENT_EMAIL=your_service_account@your_project.iam.gserviceaccount.com
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+FIREBASE_DATABASE_URL=https://your_project.firebaseio.com
+```
+
+### Run
+
+```bash
+npm run dev
+# → http://localhost:3000
 ```
 
 ---
 
-## Connecting Your Spline Scene
+## Project Structure
 
-1. Create a vault / safe-door scene at [spline.design](https://spline.design)
-2. Export → "Spline Viewer" → copy the `.splinecode` URL
-3. Replace `SPLINE_SCENE_URL` in `components/dashboard/VaultBackground.tsx`
-
-Recommended scene settings for the "war room" aesthetic:
-- Background: transparent (the CSS void colour shows through)
-- Lighting: single warm-amber point light, subtle ambient
-- Animation: continuous slow rotation on the Y axis
-
----
-
-## Connecting to Solana / Anchor
-
-Replace the mock data in `TransactionTable.tsx`'s `useEffect` with:
-
-```ts
-import { Connection, PublicKey } from "@solana/web3.js";
-
-const connection = new Connection(process.env.NEXT_PUBLIC_RPC_URL!);
-
-useEffect(() => {
-  const programId = new PublicKey(process.env.NEXT_PUBLIC_PROGRAM_ID!);
-
-  // Subscribe to program account changes
-  const subId = connection.onProgramAccountChange(programId, (info) => {
-    // Parse your Anchor account data here
-    const tx = parseAnchorTransaction(info.accountInfo.data);
-    setTxs(prev => [tx, ...prev].slice(0, MAX_ROWS));
-  });
-
-  return () => { connection.removeProgramAccountChangeListener(subId); };
-}, []);
+```
+yatra/
+├── app/
+│   ├── api/            # API routes (auth, bookings, buses)
+│   ├── driver/         # Driver console (चालक)
+│   ├── passenger/      # Passenger dashboard (यात्री)
+│   └── page.tsx        # Landing page
+├── components/
+│   ├── driver/         # Driver-specific UI
+│   ├── passenger/      # Passenger-specific UI
+│   ├── map/            # Leaflet map components
+│   └── shared/         # Common UI elements
+├── lib/
+│   ├── solana/         # Token-2022 minting & connection
+│   ├── zk/             # Groth16 prover & verifier
+│   └── firebaseDb.ts   # Real-time DB operations
+└── circuits/           # ZK circuit definitions
 ```
 
 ---
 
-## Design System
+<div align="center">
 
-| Token          | Value                    | Usage              |
-|----------------|--------------------------|--------------------|
-| `--amber`      | `#f59e0b`                | Primary accent     |
-| `--emerald`    | `#34d399`                | Confirmed/success  |
-| `--sky`        | `#60a5fa`                | Links, info        |
-| `--rose`       | `#f87171`                | Errors, warnings   |
-| `--bg-surface` | `rgba(12,14,20,0.72)`    | Glass panels       |
-| `--blur-glass` | `blur(18px) saturate(160%)` | Backdrop filter |
-| Font Display   | Syne (800)               | Headings           |
-| Font Mono      | JetBrains Mono           | Data, code, badges |
+🇳🇵 **Built By HASAN GAHA. Powered by Solana.**
 
----
-
-## Roadmap
-
-- [ ] Real-time Solana WebSocket subscription
-- [ ] Ministry-level drill-down pages
-- [ ] Audit trail export (PDF / CSV)
-- [ ] Nepali language (Devanagari) toggle
-- [ ] Dark / High-contrast accessibility mode
-- [ ] Solana wallet adapter integration (Phantom, Backpack)
+</div>

@@ -1,37 +1,66 @@
-import type { Metadata } from 'next'
-import { Space_Mono, Syne, Inter } from 'next/font/google'
-import { Providers } from './providers'
-import './globals.css'
+import type { Metadata } from "next";
+import { Outfit, JetBrains_Mono, Mukta } from "next/font/google";
+import "./globals.css";
+import { AuthProvider } from "@/lib/contexts/AuthContext";
+import { Toaster } from "@/components/ui/toaster";
+import { Toaster as SonnerToaster } from "sonner";
+import OfflineBanner from "@/components/shared/OfflineBanner";
+import PwaBootstrap from "@/components/shared/PwaBootstrap";
 
+const outfit = Outfit({
+  variable: "--font-outfit",
+  subsets: ["latin"],
+});
 
-const syne = Syne({
-  subsets: ['latin'],
-  variable: '--font-syne',
-  weight: ['400', '500', '600', '700', '800'],
-})
-const spaceMono = Space_Mono({
-  subsets: ['latin'],
-  variable: '--font-mono',
-  weight: ['400', '700'],
-})
-const inter = Inter({
-  subsets: ['latin'],
-  variable: '--font-inter',
-  weight: ['300', '400', '500'],
-})
+const mukta = Mukta({
+  variable: "--font-mukta",
+  subsets: ["devanagari", "latin"],
+  weight: ["400", "600", "700", "800"],
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains-mono",
+  subsets: ["latin"],
+});
 
 export const metadata: Metadata = {
-  title: 'Drishti — दृष्टि | Nepal Fiscal Transparency Protocol',
-  description: 'Every government rupee, on-chain, in real time. Nepal\'s blockchain-powered budget transparency system.',
-  openGraph: { images: ['/og-image.png'] },
-}
+  title: "YATRA",
+  description: "Track your bus in real-time, book seats, and share your ride.",
+  manifest: "/manifest.json",
+  themeColor: "#05070A",
+  applicationName: "Yatra",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Yatra",
+  },
+  icons: {
+    icon: [
+      { url: "/icons/pwa-192.svg", type: "image/svg+xml" },
+      { url: "/icons/pwa-512.svg", type: "image/svg+xml" },
+    ],
+    apple: [{ url: "/icons/pwa-192.svg", type: "image/svg+xml" }],
+  },
+};
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
   return (
-    <html lang="en" className={`${syne.variable} ${spaceMono.variable} ${inter.variable}`}>
-      <body className="bg-[#050505] text-[#E8F4FF] antialiased">
-        <Providers>{children}</Providers>
+    <html lang="en">
+      <body
+        className={`${outfit.variable} ${jetbrainsMono.variable} ${mukta.variable} antialiased font-sans`}
+      >
+        <AuthProvider>
+          <PwaBootstrap />
+          {children}
+          <Toaster />
+          <SonnerToaster richColors position="top-center" duration={5000} />
+          <OfflineBanner />
+        </AuthProvider>
       </body>
     </html>
-  )
+  );
 }

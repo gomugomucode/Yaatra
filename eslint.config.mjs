@@ -1,26 +1,18 @@
-// name=eslint.config.mjs
 import { defineConfig, globalIgnores } from "eslint/config";
+import nextVitals from "eslint-config-next/core-web-vitals";
+import nextTs from "eslint-config-next/typescript";
 
 const eslintConfig = defineConfig([
-  // For Next.js 15, using flat config format
-  {
-    ignores: [
-      ".next/**",
-      "out/**",
-      "build/**",
-      "next-env.d.ts",
-      "node_modules/**",
-      ".git/**",
-    ],
-  },
-  // Basic JavaScript/TypeScript rules
-  {
-    files: ["**/*.{js,jsx,ts,tsx}"],
-    rules: {
-      "no-console": "warn",
-      "no-unused-vars": "off", // TypeScript handles this
-    },
-  },
+  ...nextVitals,
+  ...nextTs,
+  // Override default ignores of eslint-config-next.
+  globalIgnores([
+    // Default ignores of eslint-config-next:
+    ".next/**",
+    "out/**",
+    "build/**",
+    "next-env.d.ts",
+  ]),
 ]);
 
 export default eslintConfig;
