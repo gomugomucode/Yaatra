@@ -1,10 +1,9 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
-import Link from 'next/link';
 import { FirebaseError } from 'firebase/app';
-import { User2, Bus, Mail, Lock, Eye, EyeOff, Loader2, ShieldCheck, ArrowLeft } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, Loader2, Bus, User2, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/lib/contexts/AuthContext';
@@ -50,17 +49,13 @@ const mapFirebaseError = (err: unknown): string => {
   return 'Something went wrong. Please try again.';
 };
 
-/**
- * After Firebase login: resolves where to send the user.
- * - isSignIn=true + passenger role → always go to /passenger dashboard directly (skip profile setup).
- * - Sign-up or driver → check profile completion and redirect accordingly.
- */
 async function resolvePostLoginRedirect(
   uid: string,
   selectedRole: Role,
   idToken: string,
   setRole: (r: Role | null) => void,
   router: ReturnType<typeof useRouter>,
+  redirectPath: string | undefined,
   isSignIn: boolean = false
 ): Promise<'dashboard' | 'profile'> {
   let userData: any = null;
@@ -71,12 +66,13 @@ async function resolvePostLoginRedirect(
   }
 
   const hasProfile = userData != null && checkProfileCompletion(userData);
-  const role = hasProfile ? (userData.role as Role) : selectedRole;
+  const resolvedRole = hasProfile ? (userData.role as Role) : selectedRole;
+  const validRedirect = redirectPath && ['/driver', '/passenger'].includes(redirectPath) ? redirectPath : undefined;
 
   const sessionRes = await fetch('/api/sessionLogin', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ idToken, role }),
+    body: JSON.stringify({ idToken, role: resolvedRole }),
   });
 
   if (!sessionRes.ok) {
@@ -84,22 +80,28 @@ async function resolvePostLoginRedirect(
     throw new Error((payload as { error?: string }).error || 'Session creation failed');
   }
 
-  setRole(role);
+  setRole(resolvedRole);
 
-  // On sign-in, go directly to dashboard for both roles — no profile setup required.
   if (isSignIn) {
-    const path = selectedRole === 'driver' ? '/driver' : '/passenger';
-    router.replace(path);
+    if (resolvedRole === 'driver') {
+      if (hasProfile) {
+        router.replace(validRedirect || '/driver');
+        return 'dashboard';
+      }
+      router.replace(`/auth/profile?role=driver${validRedirect ? `&redirect=${encodeURIComponent(validRedirect)}` : ''}`);
+      return 'profile';
+    }
+
+    router.replace(validRedirect || '/passenger');
     return 'dashboard';
   }
 
   if (hasProfile) {
-    const path = role === 'driver' ? '/driver' : '/passenger';
-    router.replace(path);
+    router.replace(validRedirect || (resolvedRole === 'driver' ? '/driver' : '/passenger'));
     return 'dashboard';
   }
 
-  router.replace(`/auth/profile?role=${selectedRole}`);
+  router.replace(`/auth/profile?role=${selectedRole}${validRedirect ? `&redirect=${encodeURIComponent(validRedirect)}` : ''}`);
   return 'profile';
 }
 
@@ -107,7 +109,7 @@ function AuthContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { setRole, currentUser, loading: authLoading, userData, role } = useAuth();
+  const { setRole, currentUser, loading: authLoading, userData } = useAuth();
   const { toast } = useToast();
 
   const [selectedRole, setSelectedRole] = useState<Role>('passenger');
@@ -117,8 +119,8 @@ function AuthContent() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState<'idle' | 'google' | 'email'>('idle');
 
-  // Sync role from URL query parameter
   const roleInUrl = searchParams.get('role') as Role | null;
+  const redirectTo = searchParams.get('redirect') || undefined;
 
   useEffect(() => {
     if (roleInUrl === 'driver' || roleInUrl === 'passenger') {
@@ -129,26 +131,21 @@ function AuthContent() {
   // Handle automatic redirection if already logged in
   useEffect(() => {
     if (authLoading || !currentUser || pathname !== '/auth') return;
-    if (userData === undefined) return;
-
-    if (userData === null) {
-      const dest = role || selectedRole;
-      router.replace(`/auth/profile?role=${dest}`);
+    if (userData && checkProfileCompletion(userData)) {
+      const finalRedirect = redirectTo && ['/driver', '/passenger'].includes(redirectTo) ? redirectTo : userData.role === 'driver' ? '/driver' : '/passenger';
+      router.replace(finalRedirect);
       return;
     }
 
-    if (checkProfileCompletion(userData)) {
-      const targetRole = userData.role || role || selectedRole;
-      router.replace(targetRole === 'driver' ? '/driver' : '/passenger');
-    } else {
-      const dest = userData.role || role || selectedRole;
-      router.replace(`/auth/profile?role=${dest}`);
+    if (userData === null) {
+      router.replace(`/auth/profile?role=${selectedRole}${redirectTo ? `&redirect=${encodeURIComponent(redirectTo)}` : ''}`);
     }
-  }, [authLoading, currentUser, userData, role, selectedRole, router, pathname]);
+  }, [authLoading, currentUser, userData, pathname, redirectTo, router, selectedRole]);
 
   const setRoleInUrl = (role: Role) => {
     const params = new URLSearchParams(Array.from(searchParams.entries()));
     params.set('role', role);
+    if (redirectTo) params.set('redirect', redirectTo);
     router.replace(`/auth?${params.toString()}`, { scroll: false });
   };
 
@@ -159,9 +156,8 @@ function AuthContent() {
       const cred = await signInWithGoogle();
       const user = cred.user;
       const idToken = await user.getIdToken(true);
-      // Google sign-in: passengers go directly to dashboard (isSignIn=true)
-      await resolvePostLoginRedirect(user.uid, selectedRole, idToken, setRole, router, true);
-      toast({ title: 'Welcome to Yatra', description: 'You’re signed in.' });
+      await resolvePostLoginRedirect(user.uid, selectedRole, idToken, setRole, router, redirectTo, true);
+      toast({ title: 'Welcome to Yatra', description: 'You’re signed in and ready to continue.' });
     } catch (err: unknown) {
       toast({ variant: 'destructive', title: 'Sign-in failed', description: mapFirebaseError(err) });
     } finally {
@@ -179,15 +175,13 @@ function AuthContent() {
     try {
       let userCredential;
       if (isSignUp) {
-        // Sign-up: create account then go through profile setup
         userCredential = await createUserWithEmail(email, password);
-        const idToken = await userCredential.user.getIdToken();
-        await resolvePostLoginRedirect(userCredential.user.uid, selectedRole, idToken, setRole, router, false);
+        const idToken = await userCredential.user.getIdToken(true);
+        await resolvePostLoginRedirect(userCredential.user.uid, selectedRole, idToken, setRole, router, redirectTo, false);
       } else {
-        // Sign-in: passengers go directly to dashboard, drivers check profile
         userCredential = await signInWithEmail(email, password);
-        const idToken = await userCredential.user.getIdToken();
-        await resolvePostLoginRedirect(userCredential.user.uid, selectedRole, idToken, setRole, router, true);
+        const idToken = await userCredential.user.getIdToken(true);
+        await resolvePostLoginRedirect(userCredential.user.uid, selectedRole, idToken, setRole, router, redirectTo, true);
       }
     } catch (err: unknown) {
       if (isSignUp && err instanceof FirebaseError && err.code === 'auth/email-already-in-use') {
@@ -228,7 +222,7 @@ function AuthContent() {
         {/* Header */}
         <div className="text-center space-y-3">
           <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-slate-900/60 backdrop-blur-md px-4 py-2">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <span className="inline-flex h-4 w-4 rounded-full bg-emerald-400" />
             <span className="text-sm font-medium text-emerald-300">Secure Access</span>
           </div>
           <h1 className="text-4xl font-black text-white tracking-tight">
@@ -243,14 +237,10 @@ function AuthContent() {
             If role is in URL, we show a locked confirmation badge.
             If NO role is in URL, we show the switchable tabs. */}
         {roleInUrl ? (
-          <div className="flex items-center justify-between px-5 py-4 rounded-2xl bg-slate-900/50 border border-emerald-500/20 backdrop-blur-md animate-in fade-in zoom-in duration-300">
+          <div className="flex items-center justify-between px-5 py-4 rounded-2xl bg-slate-900/50 border border-emerald-500/20 backdrop-blur-md">
             <div className="flex items-center gap-3">
               <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-                {selectedRole === 'driver' ? (
-                  <Bus className="w-5 h-5 text-emerald-400" />
-                ) : (
-                  <User2 className="w-5 h-5 text-emerald-400" />
-                )}
+                <span className="block h-4 w-4 rounded-full bg-emerald-400" />
               </div>
               <div>
                 <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-bold">Portal Access</p>
@@ -259,13 +249,7 @@ function AuthContent() {
                 </p>
               </div>
             </div>
-            <Link
-              href="/"
-              className="group flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-white transition-colors"
-            >
-              <ArrowLeft className="w-3 h-3 group-hover:-translate-x-1 transition-transform" />
-              Change
-            </Link>
+            <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Locked role</div>
           </div>
         ) : (
           <div className="flex p-1 rounded-2xl bg-slate-900/60 border border-slate-700/60 backdrop-blur-md">
@@ -277,7 +261,7 @@ function AuthContent() {
                 : 'text-slate-400 hover:text-slate-200'
                 }`}
             >
-              <User2 className="w-4 h-4" /> Passenger
+              <span className="inline-flex h-3 w-3 rounded-full bg-emerald-400" /> Passenger
             </button>
             <button
               type="button"
@@ -287,7 +271,7 @@ function AuthContent() {
                 : 'text-slate-400 hover:text-slate-200'
                 }`}
             >
-              <Bus className="w-4 h-4" /> Driver
+              <span className="inline-flex h-3 w-3 rounded-full bg-cyan-400" /> Driver
             </button>
           </div>
         )}
@@ -374,9 +358,5 @@ function AuthContent() {
 }
 
 export default function AuthPage() {
-  return (
-    <Suspense fallback={<div className="min-h-screen bg-slate-950 flex items-center justify-center"><Loader2 className="w-10 h-10 animate-spin text-emerald-500" /></div>}>
-      <AuthContent />
-    </Suspense>
-  );
+  return <AuthContent />;
 }

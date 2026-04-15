@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -214,22 +214,29 @@ function ProfilePageContent() {
         }),
       });
 
-      if (!registerRes.ok) throw new Error('Registration API failed');
+      const registerJson = await registerRes.json();
+      if (!registerRes.ok) throw new Error(registerJson?.error || 'Registration API failed');
 
       const freshToken = await currentUser.getIdToken(true);
-      setRole('driver');
-
-      // 2. Database writes - Using 'restOfData' to avoid 'name' and 'capacity' collision
-      await createUserProfile(currentUser.uid, {
-        ...restOfData,
-        phone: currentUser.phoneNumber || '',
-        name,
-        role: 'driver',
-        capacity: finalCapacity,
-        isApproved: false,
+      await fetch('/api/sessionLogin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken: freshToken, role: 'driver' }),
       });
 
-      // 3. RTDB Setup
+      setRole('driver');
+
+      if (registerJson?.devMode) {
+        await createUserProfile(currentUser.uid, {
+          ...restOfData,
+          phone: currentUser.phoneNumber || '',
+          name,
+          role: 'driver',
+          capacity: finalCapacity,
+          isApproved: false,
+        });
+      }
+
       const rtdb = getDatabase(getFirebaseApp());
       const nowIso = new Date().toISOString();
       await rtdbSet(ref(rtdb, `buses/${currentUser.uid}`), {
@@ -250,7 +257,7 @@ function ProfilePageContent() {
       });
 
       toast({ title: 'Success!', description: 'Profile created.' });
-      window.location.assign('/driver');
+      router.replace('/driver');
     } catch (error) {
       console.error(error);
       toast({ variant: 'destructive', title: 'Error', description: 'Failed to create profile.' });
@@ -278,9 +285,10 @@ function ProfilePageContent() {
         }),
       });
 
-      // Refresh token to get 'passenger' claim
-      const freshToken = await currentUser.getIdToken(true);
+      const registerJson = await registerRes.json();
+      if (!registerRes.ok) throw new Error(registerJson?.error || 'Registration API failed');
 
+      const freshToken = await currentUser.getIdToken(true);
       await fetch('/api/sessionLogin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -289,17 +297,19 @@ function ProfilePageContent() {
 
       setRole('passenger');
 
-      await createUserProfile(currentUser.uid, {
-        phone: currentUser.phoneNumber || '',
-        name: data.name,
-        email: data.email || null,
-        role: 'passenger',
-        emergencyContact: data.emergencyContact || null,
-        solanaWallet: data.solanaWallet || null,
-      });
+      if (registerJson?.devMode) {
+        await createUserProfile(currentUser.uid, {
+          phone: currentUser.phoneNumber || '',
+          name: data.name,
+          email: data.email || null,
+          role: 'passenger',
+          emergencyContact: data.emergencyContact || null,
+          solanaWallet: data.solanaWallet || null,
+        });
+      }
 
       toast({ title: 'Success!', description: 'Profile created.' });
-      window.location.assign('/passenger');
+      router.replace('/passenger');
     } catch (error) {
       console.error('Error:', error);
       toast({ variant: 'destructive', title: 'Error', description: 'Failed to create profile.' });
@@ -876,16 +886,5 @@ function ProfilePageContent() {
 }
 
 export default function ProfilePage() {
-  return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-slate-950 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="w-12 h-12 animate-spin text-cyan-400 mx-auto mb-4" />
-          <p className="text-slate-400">Loading...</p>
-        </div>
-      </div>
-    }>
-      <ProfilePageContent />
-    </Suspense>
-  );
+  return <ProfilePageContent />;
 }
