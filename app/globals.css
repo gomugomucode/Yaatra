@@ -243,6 +243,69 @@
   z-index: -1;
 }
 
+@keyframes float {
+  0%, 100% {
+    transform: translate3d(0, 0, 0);
+  }
+
+  50% {
+    transform: translate3d(0, -12px, 0);
+  }
+}
+
+@keyframes float-slow {
+  0%, 100% {
+    transform: translate3d(0, 0, 0);
+  }
+
+  50% {
+    transform: translate3d(0, -18px, 0);
+  }
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.45);
+  }
+
+  50% {
+    box-shadow: 0 0 0 24px rgba(34, 211, 238, 0);
+  }
+}
+
+.hero-float {
+  animation: float 7.5s ease-in-out infinite;
+}
+
+.hero-float-slow {
+  animation: float-slow 12s ease-in-out infinite;
+}
+
+.glow-ring {
+  animation: pulse-glow 3.8s ease-in-out infinite;
+}
+
+.hero-surface {
+  box-shadow: 0 30px 120px -50px rgba(0, 0, 0, 0.8), inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.glass-3d {
+  background: rgba(15, 23, 42, 0.82);
+  backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.floating-chip {
+  transform: translateZ(0);
+  transition: transform 260ms ease, box-shadow 260ms ease, border-color 260ms ease;
+}
+
+.floating-chip:hover {
+  transform: translateY(-6px) translateZ(0);
+  box-shadow: 0 28px 80px -36px rgba(0, 242, 255, 0.45);
+  border-color: rgba(56, 189, 248, 0.24);
+}
+
 /* ═══════════════════════════════════════════
    YATRA HERO — HYPER-MODERN TRANSIT COCKPIT
    ═══════════════════════════════════════════ */
@@ -1381,4 +1444,216 @@
   bottom: 10px;
   right: 10px;
   border-width: 0 2px 2px 0;
+}
+
+/* ── New landing hero styles ── */
+.hero-landing {
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient(circle at top left, rgba(14, 165, 233, 0.12), transparent 25%),
+    radial-gradient(circle at top right, rgba(124, 58, 237, 0.12), transparent 22%),
+    radial-gradient(circle at bottom, rgba(56, 189, 248, 0.08), transparent 18%),
+    linear-gradient(180deg, #020617 0%, #050a11 60%, #020509 100%);
+}
+
+.hero-background {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 10% 15%, rgba(34, 211, 238, 0.14), transparent 18%),
+    radial-gradient(circle at 85% 18%, rgba(168, 85, 255, 0.12), transparent 20%),
+    radial-gradient(circle at 50% 80%, rgba(59, 130, 246, 0.08), transparent 24%);
+  pointer-events: none;
+}
+
+.hero-overlay {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 10% 90%, rgba(56, 189, 248, 0.05), transparent 18%),
+    radial-gradient(circle at 80% 20%, rgba(124, 58, 237, 0.08), transparent 15%);
+  pointer-events: none;
+}
+
+.hero-3d-wrapper {
+  perspective: 1800px;
+}
+
+.hero-3d-card {
+  position: relative;
+  width: 100%;
+  transform-style: preserve-3d;
+  transform: rotateX(14deg) rotateY(-12deg);
+}
+
+.hero-3d-edge {
+  position: absolute;
+  inset: 0;
+  border-radius: 30px;
+  background: rgba(10, 14, 26, 0.75);
+  box-shadow: 0 45px 120px rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.hero-edge-back {
+  transform: translate3d(0, 30px, -20px) rotateX(90deg);
+  opacity: 0.55;
+}
+
+.hero-edge-middle {
+  transform: translate3d(0, 16px, -10px) rotateX(90deg);
+  opacity: 0.78;
+}
+
+.hero-3d-surface {
+  position: relative;
+  border-radius: 30px;
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(8, 13, 28, 0.95), rgba(12, 18, 39, 0.96));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  padding: 28px;
+}
+
+.hero-3d-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 26px;
+}
+
+.hero-3d-visual {
+  position: relative;
+  height: 260px;
+  border-radius: 28px;
+  background: linear-gradient(135deg, rgba(4, 23, 54, 0.95), rgba(8, 13, 30, 0.92));
+  overflow: hidden;
+  box-shadow: inset 0 0 60px rgba(0, 198, 255, 0.1);
+}
+
+.hero-3d-line {
+  position: absolute;
+  top: 35%;
+  left: 10%;
+  right: 10%;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(56, 189, 248, 0.4), rgba(59, 130, 246, 0.9), rgba(124, 58, 237, 0.4));
+  box-shadow: 0 0 40px rgba(56, 189, 248, 0.18);
+}
+
+.hero-stop {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: #38bdf8;
+  box-shadow: 0 0 18px rgba(56, 189, 248, 0.6);
+}
+
+.hero-stop-1 {
+  top: 32%;
+  left: 18%;
+}
+
+.hero-stop-2 {
+  top: 26%;
+  left: 40%;
+}
+
+.hero-stop-3 {
+  top: 38%;
+  left: 61%;
+}
+
+.hero-stop-4 {
+  top: 30%;
+  left: 82%;
+}
+
+.hero-bus-marker {
+  position: absolute;
+  top: 28%;
+  left: 52%;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.95), rgba(124, 58, 237, 0.95));
+  box-shadow: 0 0 28px rgba(56, 189, 248, 0.55), inset 0 0 12px rgba(255, 255, 255, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: heroBusDrift 4.2s ease-in-out infinite;
+}
+
+.hero-bus-head {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: white;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.95);
+}
+
+.hero-3d-infobar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  padding-top: 24px;
+}
+
+.hero-stat {
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 14px 16px;
+}
+
+.hero-stat-label {
+  display: block;
+  font-size: 0.75rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.85);
+}
+
+.hero-stat-value {
+  display: block;
+  margin-top: 8px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: white;
+}
+
+@keyframes heroBusDrift {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes heroRoutePulse {
+  0%,
+  100% {
+    opacity: 0.75;
+    transform: scaleX(1);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scaleX(1.02);
+  }
+}
+
+@keyframes heroBusFloat {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+
+  50% {
+    transform: translateY(-5px) scale(1.01);
+  }
 }

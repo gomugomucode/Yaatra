@@ -960,92 +960,135 @@ export default function DriverDashboard() {
         </div>
       </div>
 
+      <div className="px-4 pb-4">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Card className="glass-3d floating-chip border border-cyan-500/15">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs uppercase tracking-[0.24em] text-cyan-300">Live Cadence</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="text-3xl font-semibold text-white">{isOnline ? 'ONLINE' : 'OFFLINE'}</div>
+              <p className="text-xs text-slate-400">Location sharing {isOnline ? 'active' : 'paused'}</p>
+              <div className="flex items-center gap-2">
+                <span className={`h-2.5 w-2.5 rounded-full ${isOnline ? 'bg-emerald-400' : 'bg-slate-600'}`} />
+                <span className="text-[11px] uppercase tracking-widest text-slate-500">{isOnline ? 'Live mode' : 'Standby'}</span>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="glass-3d floating-chip border border-slate-700/20">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs uppercase tracking-[0.24em] text-slate-400">Sync status</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="text-3xl font-semibold text-white">{locationUpdateCount}</div>
+              <p className="text-xs text-slate-400">GPS updates sent</p>
+              <div className="text-[11px] text-slate-500">{lastFirebaseUpdate ? `Last flush ${Math.floor((Date.now() - lastFirebaseUpdate.getTime()) / 1000)}s ago` : 'Waiting for first update'}</div>
+            </CardContent>
+          </Card>
+
+          <Card className="glass-3d floating-chip border border-purple-500/20">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs uppercase tracking-[0.24em] text-purple-300">Passenger manifest</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="text-3xl font-semibold text-white">{passengers.length}</div>
+              <p className="text-xs text-slate-400">Passengers onboard</p>
+              <div className="text-[11px] text-slate-500">{selectedBus?.offlineOccupiedSeats ? `${selectedBus.offlineOccupiedSeats} offline seat${selectedBus.offlineOccupiedSeats === 1 ? '' : 's'} in use` : 'Offline support ready'}</div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
       {/* ── 2. Map Section ── */}
-      <div
-        className="relative w-full shrink-0 border-b border-slate-800/60"
-        style={{ height: '50vh', touchAction: 'pan-y' }}
-      >
-        <MapWrapper
-          role="driver"
-          buses={buses}
-          passengers={passengers}
-          selectedBus={selectedBus}
-          onBusSelect={setSelectedBus}
-          showRoute={true}
-          userLocation={userLocation}
-          hailedDriverId={selectedBus?.id || null}
-          activeTripId={activeTripRequest?.id || null}
-        />
+      <div className="relative w-full shrink-0 p-4">
+        <Card className="glass-3d overflow-hidden border border-cyan-500/15 shadow-[0_45px_120px_-85px_rgba(0,242,255,0.25)]">
+          <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_top_left,_rgba(56,189,248,0.14),_transparent_35%)]" />
+          <div className="relative h-[55vh] min-h-[340px]">
+            <MapWrapper
+              role="driver"
+              buses={buses}
+              passengers={passengers}
+              selectedBus={selectedBus}
+              onBusSelect={setSelectedBus}
+              showRoute={true}
+              userLocation={userLocation}
+              hailedDriverId={selectedBus?.id || null}
+              activeTripId={activeTripRequest?.id || null}
+            />
+          </div>
+        </Card>
       </div>
 
       {/* ── 3. Scrollable Cockpit Sections ── */}
-      <div className="p-4 space-y-4 pb-24" style={{ background: '#0B0E14' }}>
+      <div className="p-4 space-y-4 pb-24 bg-slate-950">
 
-        {/* Bus Controls Section */}
-        {selectedBus && (
-          <section className="rounded-2xl border border-cyan-500/20 overflow-hidden"
-            style={{ boxShadow: '0 0 0 1px rgba(6,182,212,0.1), inset 0 0 40px rgba(6,182,212,0.03)' }}>
-            <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-800/60"
-              style={{ background: 'rgba(6,182,212,0.05)' }}>
-              <div className="flex items-center gap-2">
-                <Settings className="w-4 h-4 text-cyan-400" />
-                <span className="text-xs font-bold tracking-widest text-cyan-300 uppercase">Vehicle Status</span>
+        <div className="grid gap-4 xl:grid-cols-[1.4fr_0.95fr]">
+          <section className="glass-3d rounded-3xl border border-cyan-500/15 overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800/60 bg-slate-950/80">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-cyan-300">Cockpit command</p>
+                <h2 className="mt-2 text-xl font-bold text-white">Driver dashboard</h2>
               </div>
-              <Button variant="ghost" size="sm" className="h-5 text-[10px] text-slate-600 hover:text-red-500 px-2"
+              <Button variant="ghost" size="sm" className="h-9 text-[10px] text-slate-300 hover:text-red-400 px-3"
                 onClick={triggerManualTest}>Test Crash</Button>
             </div>
-            <div className="p-4">
-              <DriverPanel
-                bus={selectedBus}
-                onLocationToggle={handleLocationToggle}
-                locationEnabled={locationEnabled}
-                onAddOfflinePassenger={handleAddOfflinePassenger}
-                onRemoveOfflinePassenger={handleRemoveOfflinePassenger}
-              />
+            <div className="p-5">
+              {selectedBus ? (
+                <DriverPanel
+                  bus={selectedBus}
+                  onLocationToggle={handleLocationToggle}
+                  locationEnabled={locationEnabled}
+                  onAddOfflinePassenger={handleAddOfflinePassenger}
+                  onRemoveOfflinePassenger={handleRemoveOfflinePassenger}
+                />
+              ) : (
+                <div className="rounded-3xl border border-slate-800/70 bg-slate-950/70 p-6 text-slate-400">
+                  Select your bus from the map to unlock the cockpit controls.
+                </div>
+              )}
             </div>
           </section>
-        )}
 
-        {/* ZK Identity Section */}
-        {userData && (
-          <section className="rounded-2xl border border-blue-500/20 overflow-hidden"
-            style={{ boxShadow: '0 0 0 1px rgba(59,130,246,0.1), inset 0 0 40px rgba(59,130,246,0.03)' }}>
-            <div className="flex items-center gap-2 px-4 py-2.5 border-b border-slate-800/60 relative z-[1000]"
-              style={{ background: 'rgba(59,130,246,0.05)' }}>
-              <Settings className="w-4 h-4 text-blue-400" />
-              <span className="text-xs font-bold tracking-widest text-blue-300 uppercase">Security Clearance</span>
-            </div>
-            <div className="p-4">
-              <VerificationPanel
-                driver={userData as Driver}
-                onVerificationSuccess={() => { }}
-              />
-            </div>
-          </section>
-        )}
+          <div className="space-y-4">
+            <section className="glass-3d rounded-3xl border border-purple-500/15 overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800/60 bg-slate-950/80">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-purple-300">Passenger manifest</p>
+                  <h2 className="mt-2 text-xl font-bold text-white">Onboard list</h2>
+                </div>
+                <Badge className="text-xs uppercase tracking-[0.24em] bg-purple-500/10 text-purple-200 border border-purple-500/20">
+                  {passengers.length}
+                </Badge>
+              </div>
+              <div className="p-5">
+                <PassengerList
+                  passengers={passengers}
+                  selectedBus={selectedBus}
+                  onPassengerPickup={handlePassengerPickup}
+                  onPassengerDropoff={handlePassengerDropoff}
+                />
+              </div>
+            </section>
 
-        {/* Passenger Manifest */}
-        <section className="rounded-2xl border border-purple-500/20 overflow-hidden"
-          style={{ boxShadow: '0 0 0 1px rgba(168,85,247,0.1), inset 0 0 40px rgba(168,85,247,0.03)' }}>
-          <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-800/60"
-            style={{ background: 'rgba(168,85,247,0.05)' }}>
-            <div className="flex items-center gap-2">
-              <Users className="w-4 h-4 text-purple-400" />
-              <span className="text-xs font-bold tracking-widest text-purple-300 uppercase">Passenger Manifest</span>
-            </div>
-            <span className="text-xs font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30 rounded-full px-2.5 py-0.5">
-              {passengers.length}
-            </span>
+            {userData && (
+              <section className="glass-3d rounded-3xl border border-blue-500/15 overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800/60 bg-slate-950/80">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-sky-300">Security</p>
+                    <h2 className="mt-2 text-xl font-bold text-white">ZK identity review</h2>
+                  </div>
+                </div>
+                <div className="p-5">
+                  <VerificationPanel
+                    driver={userData as Driver}
+                    onVerificationSuccess={() => { }}
+                  />
+                </div>
+              </section>
+            )}
           </div>
-          <div className="p-4">
-            <PassengerList
-              passengers={passengers}
-              selectedBus={selectedBus}
-              onPassengerPickup={handlePassengerPickup}
-              onPassengerDropoff={handlePassengerDropoff}
-            />
-          </div>
-        </section>
+        </div>
 
         <div className="h-8" />
       </div>

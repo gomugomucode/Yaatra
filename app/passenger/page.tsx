@@ -898,25 +898,67 @@ export default function PassengerDashboard() {
         </div>
       </div>
 
+      <div className="px-4 pb-4">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Card className="glass-3d floating-chip border border-cyan-500/15">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs uppercase tracking-[0.24em] text-cyan-300">Nearby transit</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="text-3xl font-semibold text-white">{filteredBuses.length}</div>
+              <p className="text-xs text-slate-400">Active buses near you</p>
+              <div className="text-[11px] text-slate-500">Tap a bus to hail its route.</div>
+            </CardContent>
+          </Card>
+
+          <Card className="glass-3d floating-chip border border-slate-700/20">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs uppercase tracking-[0.24em] text-slate-400">Ride requests</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="text-3xl font-semibold text-white">{requestStatus === 'requesting' ? 'Awaiting driver' : requestStatus === 'on-trip' ? 'On route' : 'Ready'}</div>
+              <p className="text-xs text-slate-400">Current trip status</p>
+              <div className="text-[11px] text-slate-500">{hailedDriverId ? `Driver ${hailedDriverId} notified` : 'No driver hailed yet'}</div>
+            </CardContent>
+          </Card>
+
+          <Card className="glass-3d floating-chip border border-purple-500/20">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs uppercase tracking-[0.24em] text-purple-300">Alerts</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="text-3xl font-semibold text-white">{showRideHereAlert ? 'Ride arrived' : 'Smooth ride'}</div>
+              <p className="text-xs text-slate-400">Pickup proximity</p>
+              <div className="text-[11px] text-slate-500">{pickupProximityLevel ? pickupProximityLevel : 'Watching location'}</div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
       {/* 2. Map Section (Priority View) */}
-      <div className="relative w-full h-[65vh] shrink-0 border-b border-slate-800">
-        <MapWrapper
-          role="passenger"
-          buses={filteredBuses}
-          selectedBus={selectedBus}
-          onBusSelect={handleBusSelect}
-          onLocationSelect={handleLocationSelect}
-          showRoute={!!selectedBus}
-          pickupLocation={pickupLocation}
-          dropoffLocation={dropoffLocation}
-          pickupProximityLevel={pickupProximityLevel}
-          userLocation={userLocation}
-          busETAs={busETAs}
-          busLocations={busLocations}
-          requestStatus={requestStatus}
-          hailedDriverId={hailedDriverId}
-          activeTripId={activeTripId}
-        />
+      <div className="relative w-full shrink-0 p-4">
+        <Card className="glass-3d overflow-hidden border border-cyan-500/15 shadow-[0_45px_120px_-85px_rgba(0,242,255,0.25)]">
+          <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.16),transparent_35%)]" />
+          <div className="relative h-[65vh] min-h-[360px]">
+            <MapWrapper
+              role="passenger"
+              buses={filteredBuses}
+              selectedBus={selectedBus}
+              onBusSelect={handleBusSelect}
+              onLocationSelect={handleLocationSelect}
+              showRoute={!!selectedBus}
+              pickupLocation={pickupLocation}
+              dropoffLocation={dropoffLocation}
+              pickupProximityLevel={pickupProximityLevel}
+              userLocation={userLocation}
+              busETAs={busETAs}
+              busLocations={busLocations}
+              requestStatus={requestStatus}
+              hailedDriverId={hailedDriverId}
+              activeTripId={activeTripId}
+            />
+          </div>
+        </Card>
 
         {/* Floating Action Button for Hailing (Overlaid on Map) */}
         {selectedBus && !pickupLocation && (
@@ -945,55 +987,95 @@ export default function PassengerDashboard() {
 
       {/* 3. Scrollable Content (Below Map) */}
       <div className="flex-1 bg-slate-950 p-4 space-y-6">
-        {/* Wallet Settings */}
-        <WalletSettings />
+        <div className="grid gap-4 xl:grid-cols-[1.4fr_0.85fr]">
+          <Card className="glass-3d border border-slate-800/60 overflow-hidden">
+            <CardHeader className="px-5 py-4 border-b border-slate-800/60">
+              <CardTitle className="text-lg font-bold text-white">Wallet & settings</CardTitle>
+            </CardHeader>
+            <CardContent className="p-5">
+              <WalletSettings />
+            </CardContent>
+          </Card>
 
-        {/* Booking Panel */}
-        <div className="space-y-2">
-          <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <Ticket className="w-5 h-5 text-blue-400" />
-            Ride Details
-          </h2>
-          <BookingPanel
-            pickupLocation={pickupLocation}
-            dropoffLocation={dropoffLocation}
-            selectedBus={selectedBus}
-            onBook={handleBookBus}
-            onReset={handleResetLocations}
-            loading={bookingLoading}
-          />
+          <Card className="glass-3d border border-slate-800/60 overflow-hidden">
+            <CardHeader className="px-5 py-4 border-b border-slate-800/60">
+              <CardTitle className="text-lg font-bold text-white">Quick ride summary</CardTitle>
+            </CardHeader>
+            <CardContent className="p-5 space-y-4 text-slate-300">
+              <div className="rounded-3xl bg-slate-900/70 p-4">
+                <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Current request</p>
+                <p className="mt-2 text-sm font-semibold text-white">
+                  {requestStatus === 'requesting'
+                    ? 'Awaiting driver acceptance'
+                    : requestStatus === 'on-trip'
+                      ? 'Ride is in progress'
+                      : 'No active request'}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Driver status</p>
+                <p className="mt-2 text-sm text-white">
+                  {hailedDriverId ? `Driver ${hailedDriverId} is on the way` : 'Select a bus to hail'}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Nearby bus ETA</p>
+                <p className="mt-2 text-sm text-white">
+                  {selectedBus && busETAs[selectedBus.id] != null ? `${Math.round(busETAs[selectedBus.id] ?? 0)} min` : 'Waiting for live ETA'}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
-        {/* Trip History & NFT Receipts */}
-        <div id="trip-history">
-          <TripHistory />
-        </div>
+        <Card className="glass-3d border border-slate-800/60 overflow-hidden">
+          <CardHeader className="px-5 py-4 border-b border-slate-800/60">
+            <CardTitle className="text-lg font-bold text-white">Ride details</CardTitle>
+          </CardHeader>
+          <CardContent className="p-5">
+            <BookingPanel
+              pickupLocation={pickupLocation}
+              dropoffLocation={dropoffLocation}
+              selectedBus={selectedBus}
+              onBook={handleBookBus}
+              onReset={handleResetLocations}
+              loading={bookingLoading}
+            />
+          </CardContent>
+        </Card>
 
-        {/* Instructions / Tips */}
+        <Card className="glass-3d border border-slate-800/60 overflow-hidden">
+          <CardHeader className="px-5 py-4 border-b border-slate-800/60">
+            <CardTitle className="text-lg font-bold text-white">Ride history</CardTitle>
+          </CardHeader>
+          <CardContent className="p-5">
+            <TripHistory />
+          </CardContent>
+        </Card>
+
         {!selectedBus && (
           <div className="grid grid-cols-3 gap-3">
-            <div className="bg-slate-900/50 border border-slate-800 p-3 rounded-xl flex flex-col items-center text-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-blue-500/10 flex items-center justify-center">
-                <MapPin className="w-4 h-4 text-blue-400" />
+            <div className="glass-3d border border-slate-800/50 p-4 rounded-3xl flex flex-col items-center text-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center">
+                <MapPin className="w-5 h-5 text-blue-400" />
               </div>
-              <span className="text-xs font-medium text-slate-400">1. Tap Bus</span>
+              <span className="text-xs font-medium text-slate-300">1. Tap Bus</span>
             </div>
-            <div className="bg-slate-900/50 border border-slate-800 p-3 rounded-xl flex flex-col items-center text-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-emerald-500/10 flex items-center justify-center">
-                <Navigation className="w-4 h-4 text-emerald-400" />
+            <div className="glass-3d border border-slate-800/50 p-4 rounded-3xl flex flex-col items-center text-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center">
+                <Navigation className="w-5 h-5 text-emerald-400" />
               </div>
-              <span className="text-xs font-medium text-slate-400">2. Hail</span>
+              <span className="text-xs font-medium text-slate-300">2. Hail</span>
             </div>
-            <div className="bg-slate-900/50 border border-slate-800 p-3 rounded-xl flex flex-col items-center text-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-purple-500/10 flex items-center justify-center">
-                <Clock className="w-4 h-4 text-purple-400" />
+            <div className="glass-3d border border-slate-800/50 p-4 rounded-3xl flex flex-col items-center text-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-purple-500/10 flex items-center justify-center">
+                <Clock className="w-5 h-5 text-purple-400" />
               </div>
-              <span className="text-xs font-medium text-slate-400">3. Ride</span>
+              <span className="text-xs font-medium text-slate-300">3. Ride</span>
             </div>
           </div>
         )}
 
-        {/* Bottom Padding for scrolling */}
         <div className="h-8"></div>
       </div>
     </div>
