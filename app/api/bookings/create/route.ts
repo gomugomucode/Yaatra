@@ -1,10 +1,18 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { z } from 'zod';
 import { getFirebaseAdminAuth } from '@/lib/firebaseAdmin';
 import { getDatabase } from 'firebase-admin/database';
 import { initializeApp, getApps, cert, type ServiceAccount } from 'firebase-admin/app';
 import { calculateFareFromLocations } from '@/lib/utils/fareCalculator';
 import { Booking, VehicleTypeId } from '@/lib/types';
+import { checkCsrf } from '@/lib/utils/csrf';
+
+const coordinateSchema = z.object({
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+  accuracy: z.number().min(0).max(10000).optional(),
+});
 
 // Initialize Firebase Admin for database access
 function getAdminApp() {
@@ -30,6 +38,11 @@ function getAdminApp() {
 }
 
 export async function POST(request: Request) {
+  // CSRF guard
+  if (!checkCsrf(request)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
   try {
     const { bookingData } = await request.json();
 
@@ -48,6 +61,14 @@ export async function POST(request: Request) {
     const decoded = await auth.verifySessionCookie(sessionCookie);
     const passengerId = decoded.uid;
 
+    // Reject if the caller tries to forge a different passengerId in the payload
+    if (bookingData.passengerId && bookingData.passengerId !== passengerId) {
+      return NextResponse.json(
+        { error: 'passengerId does not match authenticated user' },
+        { status: 403 }
+      );
+    }
+
     // Validate booking data
     const {
       busId,
@@ -61,6 +82,22 @@ export async function POST(request: Request) {
       paymentMethod = 'cash',
       vehicleType: requestedVehicleType,
     } = bookingData;
+
+    // Validate coordinates
+    const pickupParsed = coordinateSchema.safeParse(pickupLocation);
+    if (!pickupParsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid pickupLocation coordinates', details: pickupParsed.error.flatten() },
+        { status: 400 }
+      );
+    }
+    const dropoffParsed = coordinateSchema.safeParse(dropoffLocation);
+    if (!dropoffParsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid dropoffLocation coordinates', details: dropoffParsed.error.flatten() },
+        { status: 400 }
+      );
+    }
 
     if (!busId || !passengerName || !phoneNumber || !pickupLocation || !dropoffLocation) {
       return NextResponse.json(

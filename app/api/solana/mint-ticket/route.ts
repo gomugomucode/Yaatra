@@ -1,12 +1,45 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { Connection, Keypair } from '@solana/web3.js';
 import bs58 from 'bs58';
 import { mintTripTicketNFT, TripTicketMetadata } from '@/lib/solana/tripTicket';
 import { getDb } from '@/lib/firebaseDb';
 import { ref, update } from 'firebase/database';
+import { getFirebaseAdminAuth } from '@/lib/firebaseAdmin';
+import { checkRateLimit } from '@/lib/utils/rateLimit';
+import { checkCsrf } from '@/lib/utils/csrf';
+
+const MINT_MAX_PER_HOUR = 5;
+const ONE_HOUR_MS = 60 * 60 * 1000;
 
 export async function POST(request: Request) {
+    // CSRF guard
+    if (!checkCsrf(request)) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     try {
+        // Authenticate via session cookie
+        const cookieStore = await cookies();
+        const sessionCookie = cookieStore.get('session')?.value ?? null;
+
+        if (!sessionCookie) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const auth = getFirebaseAdminAuth();
+        const decoded = await auth.verifySessionCookie(sessionCookie);
+        const callerUid = decoded.uid;
+
+        // Rate limit: max 5 mints per user per hour
+        const { allowed } = checkRateLimit(`mint:${callerUid}`, MINT_MAX_PER_HOUR, ONE_HOUR_MS);
+        if (!allowed) {
+            return NextResponse.json(
+                { error: 'Rate limit exceeded. Maximum 5 mint requests per hour.' },
+                { status: 429 }
+            );
+        }
+
         const body = await request.json();
         const { bookingId, passengerId, passengerWallet, fare, route, driverName } = body;
 
@@ -49,15 +82,8 @@ export async function POST(request: Request) {
         );
 
         // Update Firebase bookings record
-        // In Yatra, ride requests/bookings are stored in `bookings/{passengerId}/` or maybe `trips/{bookingId}`
-        // Let's update `trips/{bookingId}` or `bookings/{passengerId}/{bookingId}`
-        // Usually, the app writes to `bookings/{userId}/{bookingId}`.
         const db = getDb();
         const passengerIdToUse = passengerId || bookingId;
-
-        // Both `bookings` and `trips` might need it. The UI (YatraProfileDrawer) binds to `bookings/{uid}/{passenger-role}`.
-        // wait, `subscribeToBookings(currentUser.uid, 'passenger')` queries `bookings/{passengerId}`.
-        // So we definitely must update `bookings/${passengerIdToUse}/${bookingId}`.
 
         const bookingRef = ref(db, `bookings/${passengerIdToUse}/${bookingId}`);
 

@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { getConnection, getServerKeypair } from '@/lib/solana/connection';
 import { createDriverVerificationBadge, BadgeMetadata } from '@/lib/solana/tokenExtensions';
-import { getAdminDb } from '@/lib/firebaseAdmin';
+import { getAdminDb, getFirebaseAdminAuth } from '@/lib/firebaseAdmin';
 import { verifyDriverProof } from '@/lib/zk/verifier';
 import {
     Transaction,
@@ -9,11 +10,16 @@ import {
     PublicKey,
     sendAndConfirmTransaction,
 } from '@solana/web3.js';
+import { checkRateLimit } from '@/lib/utils/rateLimit';
+import { checkCsrf } from '@/lib/utils/csrf';
 // IMPORTANT: Must be 'nodejs' — snarkjs uses worker_threads and native modules
 // that are unavailable in the Edge runtime. Without this, verify will silently fail.
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
+
+const VERIFY_MAX_PER_DAY = 3;
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
 
 /**
@@ -39,7 +45,33 @@ export async function POST(request: Request) {
     console.log("------------------------------------------");
     console.log("🚀 [API] MINT REQUEST RECEIVED");
 
+    // CSRF guard
+    if (!checkCsrf(request)) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     try {
+        // Authenticate via session cookie
+        const cookieStore = await cookies();
+        const sessionCookie = cookieStore.get('session')?.value ?? null;
+
+        if (!sessionCookie) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const auth = getFirebaseAdminAuth();
+        const decoded = await auth.verifySessionCookie(sessionCookie);
+        const callerUid = decoded.uid;
+
+        // Rate limit: max 3 verify requests per driver per day
+        const { allowed } = checkRateLimit(`verify-driver:${callerUid}`, VERIFY_MAX_PER_DAY, ONE_DAY_MS);
+        if (!allowed) {
+            return NextResponse.json(
+                { error: 'Rate limit exceeded. Maximum 3 verification requests per day.' },
+                { status: 429 }
+            );
+        }
+
         const body = await request.json();
         const {
             driverId,
@@ -50,6 +82,11 @@ export async function POST(request: Request) {
             zkPublicSignals,
             licenseNumber,
         } = body;
+
+        // Ensure the caller can only verify their own identity
+        if (driverId !== callerUid) {
+            return NextResponse.json({ error: 'Forbidden: driverId does not match session' }, { status: 403 });
+        }
 
         // ── Step 1: ZK Verification ───────────────────────────────────────
         console.log("🔍 [ZK] Verifying Proof...");

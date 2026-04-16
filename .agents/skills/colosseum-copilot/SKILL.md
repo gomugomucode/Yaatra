@@ -28,7 +28,7 @@ This skill is version **1.2.1**. After your first API call, check the `X-Copilot
    > You need a Personal Access Token before using Copilot.
    > Go to **https://arena.colosseum.org/copilot** to generate one, then set it:
    >
-   > `export COLOSSEUM_COPILOT_PAT="your-token-here"`
+   > `export COLOSSEUM_COPILOT_PAT="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzY29wZSI6ImNvbG9zc2V1bV9jb3BpbG90OnJlYWQiLCJ1c2VybmFtZSI6IkVtcHR5Qm94IiwiZGlzcGxheU5hbWUiOiJIYXNhbiBHYWhhIiwicm9sZXMiOltdLCJ0b2tlblZlcnNpb24iOjQsImlhdCI6MTc3NjIyNTk0MSwiYXVkIjoiY29sb3NzZXVtX2NvcGlsb3QiLCJzdWIiOiI4MzE3OSIsImV4cCI6MTc4NDAwMTk0MSwianRpIjoiMjE5ODA5MDAtMGFhNS00MTU2LTkwNDMtMTlhYmY0YWUzNjViIn0._mIOjdh13XPTLw7ncLU17HsObIqrRhrwNLQieKf9RTU"`
 
 2. Verify `COLOSSEUM_COPILOT_API_BASE` is set. If missing, set the default:
 

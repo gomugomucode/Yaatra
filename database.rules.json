@@ -6,13 +6,18 @@
         ".write": "auth != null && (auth.uid === $busId || root.child('users').child(auth.uid).child('role').val() === 'admin')",
         "currentLocation": {
           ".validate": "newData.hasChildren(['lat', 'lng', 'timestamp'])"
+        },
+        "location": {
+          ".write": "auth != null && auth.uid === $busId",
+          ".validate": "newData.hasChildren(['lat', 'lng', 'timestamp']) && (now - newData.child('timestamp').val()) < 600000"
         }
       }
     },
     "locations": {
-      ".read": true, 
+      ".read": true,
       "$uid": {
-        ".write": "auth != null && (auth.uid === $uid || root.child('users').child(auth.uid).child('role').val() === 'admin')"
+        ".write": "auth != null && (auth.uid === $uid || root.child('users').child(auth.uid).child('role').val() === 'admin')",
+        ".validate": "newData.hasChildren(['lat', 'lng', 'timestamp']) && (now - newData.child('timestamp').val()) < 600000"
       }
     },
     "drivers": {
@@ -25,7 +30,9 @@
     },
     "bookings": {
       ".read": "auth != null",
-      ".write": "auth != null",
+      "$bookingId": {
+        ".write": "auth != null && (!data.exists() ? newData.child('passengerId').val() === auth.uid : data.child('passengerId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin')"
+      },
       ".indexOn": ["busId", "passengerId"]
     },
     "tripRequests": {
@@ -42,16 +49,20 @@
     },
     "users": {
       "$uid": {
-        ".read": "auth != null", 
+        ".read": "auth != null && auth.uid === $uid",
         ".write": "auth != null && auth.uid === $uid",
         "verificationBadge": {
-           ".validate": "newData.hasChildren(['mintAddress', 'txSignature'])"
+          ".validate": "newData.hasChildren(['mintAddress', 'txSignature'])"
         }
       }
     },
     "alerts": {
       ".read": "auth != null",
       ".write": "auth != null"
+    },
+    "seed": {
+      ".read": false,
+      ".write": false
     }
   }
 }

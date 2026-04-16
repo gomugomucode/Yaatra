@@ -1,7 +1,13 @@
 import { NextResponse } from 'next/server';
 import { getFirebaseAdminAuth } from '@/lib/firebaseAdmin';
+import { checkCsrf } from '@/lib/utils/csrf';
 
 export async function POST(request: Request) {
+  // CSRF guard
+  if (!checkCsrf(request)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
   try {
     const { idToken, role } = await request.json();
 
@@ -12,29 +18,10 @@ export async function POST(request: Request) {
     let auth;
     try {
       auth = getFirebaseAdminAuth();
-    } catch (e) {
-      console.warn('[sessionLogin] Admin SDK not configured, using Dev Mode fallback.');
-      // Dev Mode: Create a mock session if Admin SDK is missing
-      const response = NextResponse.json({ status: 'ok', uid: 'dev-user', devMode: true });
-      const expiresIn = 60 * 60 * 24 * 7 * 1000; // 7 days
-
-      response.cookies.set('session', 'dev-session-token', {
-        httpOnly: true,
-        secure: false,
-        path: '/',
-        sameSite: 'lax',
-        maxAge: expiresIn / 1000,
-      });
-
-      response.cookies.set('role', role, {
-        httpOnly: false,
-        secure: false,
-        path: '/',
-        sameSite: 'lax',
-        maxAge: expiresIn / 1000,
-      });
-
-      return response;
+    } catch {
+      // Admin SDK not configured — hard-fail rather than fall back to a fake session.
+      console.error('[sessionLogin] Firebase Admin SDK not initialised. Check server environment variables.');
+      return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
     }
 
     const decoded = await auth.verifyIdToken(idToken);
@@ -54,9 +41,11 @@ export async function POST(request: Request) {
       maxAge: expiresIn / 1000,
     });
 
+    // role cookie must be httpOnly so JS cannot be used to forge it client-side.
+    // The middleware reads it server-side, so httpOnly is safe.
     response.cookies.set('role', role, {
-      httpOnly: false,
-      secure: isProd,
+      httpOnly: true,
+      secure: true,
       path: '/',
       sameSite: 'lax',
       maxAge: expiresIn / 1000,
@@ -66,11 +55,7 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error('[sessionLogin] error', error);
     const message =
-      error instanceof Error
-        ? error.message
-        : 'Failed to create session';
+      error instanceof Error ? error.message : 'Failed to create session';
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }
-
-
