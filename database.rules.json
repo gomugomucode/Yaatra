@@ -10,7 +10,7 @@
       }
     },
     "locations": {
-      ".read": true, 
+      ".read": true,
       "$uid": {
         ".write": "auth != null && (auth.uid === $uid || root.child('users').child(auth.uid).child('role').val() === 'admin')"
       }
@@ -26,26 +26,37 @@
     "bookings": {
       ".read": "auth != null",
       ".write": "auth != null",
-      ".indexOn": ["busId", "passengerId"]
+      ".indexOn": [
+        "busId",
+        "passengerId"
+      ]
     },
     "tripRequests": {
       ".read": "auth != null",
       ".write": "auth != null",
       "$busId": {
-        ".indexOn": ["createdAt", "status"]
+        ".indexOn": [
+          "createdAt",
+          "status"
+        ]
       }
     },
     "trips": {
       ".read": "auth != null",
       ".write": "auth != null",
-      ".indexOn": ["driverId", "passengerId", "status", "createdAt"]
+      ".indexOn": [
+        "driverId",
+        "passengerId",
+        "status",
+        "createdAt"
+      ]
     },
     "users": {
       "$uid": {
-        ".read": "auth != null", 
+        ".read": "auth != null",
         ".write": "auth != null && auth.uid === $uid",
         "verificationBadge": {
-           ".validate": "newData.hasChildren(['mintAddress', 'txSignature'])"
+          ".validate": "newData.hasChildren(['mintAddress', 'txSignature'])"
         }
       }
     },
